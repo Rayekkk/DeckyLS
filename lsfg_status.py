@@ -60,6 +60,20 @@ def find_game(appid, proc="/proc"):
     return None
 
 
+def running_appid(proc="/proc"):
+    """The App ID of the game Steam is running (its reaper's AppId=), or 0."""
+    for path in glob.glob(os.path.join(proc, "[0-9]*", "cmdline")):
+        try:
+            argv = _read(path).split(b"\0")
+        except OSError:
+            continue
+        if argv and argv[0].endswith(b"/reaper"):
+            for arg in argv:
+                if arg.startswith(b"AppId=") and arg[6:].isdigit() and int(arg[6:]) > 0:
+                    return int(arg[6:])
+    return 0
+
+
 def _launched_exe(argv):
     """The game's file name: the last Windows .exe (Proton), else the program after the last "--" (native)."""
     args = [a.decode(errors="replace") for a in argv if a]

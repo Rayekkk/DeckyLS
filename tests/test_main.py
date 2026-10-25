@@ -60,22 +60,27 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.saved()["global"], {"allow_fp16": False})
         self.assertEqual(self.saved()["profile"][0]["name"], "x")
 
-    def test_fps_counter_switch_is_remembered_and_shows_nothing_while_off(self):
-        self.assertFalse(asyncio.run(self.plugin.get_state())["fps_counter"])
-        self.plugin.fps.fps, self.plugin.fps.at = 120.0, main.time.monotonic()
-        self.assertEqual(asyncio.run(self.plugin.get_fps(1809540)), {"fps": None, "multiplier": 1})
-        try:
-            self.assertTrue(asyncio.run(self.plugin.set_fps_counter(True))["fps_counter"])
-            self.plugin.fps.fps, self.plugin.fps.at = 120.0, main.time.monotonic()
-            # lsfg-vk has not joined this game (no such process here), so no base rate is claimed.
-            self.assertEqual(asyncio.run(self.plugin.get_fps(1809540)), {"fps": 120.0, "multiplier": 1})
+    def test_fps_counter_switch_is_remembered_and_runs_only_while_on(self):
+        async def flow():
+            self.assertFalse((await self.plugin.get_state())["fps_counter"])
+            self.assertTrue((await self.plugin.set_fps_counter(True))["fps_counter"])
+            task = self.plugin.fps_task
+            self.assertFalse(task.done(), "the counter loop runs while the switch is on")
             again = main.Plugin()
-            asyncio.run(again._main())
+            await again._main()
             self.assertTrue(again.fps_counter, "the switch survives a restart")
-            again.fps.stop()
-            self.assertEqual(asyncio.run(self.plugin.set_fps_counter("on"))["error"], "Invalid settings were rejected.")
-        finally:
-            asyncio.run(self.plugin.set_fps_counter(False))
+            await again._unload()
+            self.assertEqual((await self.plugin.set_fps_counter("on"))["error"], "Invalid settings were rejected.")
+            await self.plugin.set_fps_counter(False)
+            await asyncio.gather(task, return_exceptions=True)
+            self.assertTrue(task.done(), "and stops with it")
+        asyncio.run(flow())
+
+    def test_counter_label_reads_like_a_counter(self):
+        self.assertEqual(main.lsfg_fps.label(143.9, 3), "48 / 144 FPS")
+        self.assertEqual(main.lsfg_fps.label(120.5, 2), "60 / 121 FPS")
+        self.assertEqual(main.lsfg_fps.label(59.6, 1), "60 FPS")
+        self.assertEqual(main.lsfg_fps.label(None, 3), "")
 
     def test_counter_uses_the_multiplier_of_the_profile_lsfg_vk_joined(self):
         self.call(["1809540"], "Nine Sols", settings(multiplier=3))

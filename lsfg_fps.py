@@ -23,6 +23,14 @@ def pipe_pattern():
     return f"/run/user/{os.getuid()}/gamescope.*/stats.pipe"
 
 
+def label(fps, multiplier):
+    """"base / shown FPS" while frame generation runs, "shown FPS" without it; "" hides the counter."""
+    if fps is None:
+        return ""
+    whole = lambda value: int(value + 0.5)  # noqa: E731 - round half up, as people read a counter
+    return f"{whole(fps / multiplier)} / {whole(fps)} FPS" if multiplier > 1 else f"{whole(fps)} FPS"
+
+
 def last_fps(data):
     """The newest fps value in a chunk of the pipe's text, or None."""
     values = _FPS.findall(data)

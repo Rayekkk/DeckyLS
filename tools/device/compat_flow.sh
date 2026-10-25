@@ -4,6 +4,7 @@
 # user's config file back exactly as it was.
 set -u
 appid=$1 name=$2 D=$(dirname "$0")
+bash "$D/busy.sh" "$appid" || exit 1
 conf=~/.config/lsfg-vk/conf.toml backup=/tmp/deckyls-compat-backup.toml
 cp "$conf" "$backup"
 q() { CDP_TARGET=QuickAccess_uid2 python3 -I "$D/cdp.py" "$@"; }

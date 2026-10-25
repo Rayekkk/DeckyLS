@@ -1,6 +1,6 @@
 {
   "name": "deckyls",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "DeckyLoader plugin: Lossless Scaling frame generation (official lsfg-vk 2.0) for the game you are playing",
   "license": "BSD-3-Clause",
   "type": "module",

@@ -2,6 +2,14 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.5.1] - 2026-10-25
+
+### Fixed
+
+- The FPS counter showed only while the Quick Access Menu was open, and updated slowly. It now has its own
+  overlay window, the way Steam's performance overlay does, so it stays on screen over the game and changes
+  with every reading gamescope reports (a few times a second).
+
 ## [0.5.0] - 2026-10-25
 
 ### Added

@@ -11,6 +11,7 @@ import asyncio
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 
@@ -110,8 +111,10 @@ class Plugin:
         self.fps_counter = isinstance(saved, dict) and saved.get("fps_counter") is True
         self.fps = lsfg_fps.Reader(lsfg_fps.pipe_pattern() if hasattr(os, "getuid") else "")
         self.live = {}  # appid -> what the FPS counter knows about that game's session
+        self.fps_task = None
+        self.fps_label = ""  # what the counter shows right now
         if self.fps_counter:
-            self.fps.start()
+            self._start_counter()
 
     async def get_state(self, appid: int = 0, name: str = "") -> dict:
         home = _home()
@@ -128,6 +131,7 @@ class Plugin:
             "rivals": lsfg_status.rival_plugins(PLUGIN_DIR),
             "config_error": "",
             "fps_counter": self.fps_counter,
+            "fps_label": self.fps_label if self.fps_counter else "",
             "games": [],
             "game": None,
         }
@@ -195,15 +199,68 @@ class Plugin:
         os.replace(tmp, self.settings_path)
         self.fps_counter = enabled
         if enabled:
-            self.fps.start()
+            self._start_counter()
         else:
-            self.fps.stop()
+            self._stop_counter()
         return await self.get_state(appid, game_name)
 
-    async def get_fps(self, appid: int = 0) -> dict:
-        """For the FPS counter: the rate on screen and the multiplier really running in the game (1 = none)."""
-        fps = self.fps.current() if self.fps_counter else None
-        return {"fps": fps, "multiplier": await self._live_multiplier(appid) if fps else 1}
+    def _start_counter(self):
+        self.fps.start()
+        if self.fps_task is None or self.fps_task.done():
+            self.fps_task = asyncio.get_running_loop().create_task(self._counter())
+
+    def _stop_counter(self):
+        self.fps.stop()
+        self.fps_label = ""
+        if self.fps_task:
+            self.fps_task.cancel()
+
+    async def _counter(self):
+        """Keep the overlay window's label current while the counter is on: a new gamescope reading arrives a few
+        times a second; the running game is looked up every 2 s."""
+        overlay, sent, appid, next_scan, retry_at = None, None, 0, 0.0, 0.0
+        try:
+            while True:
+                now = time.monotonic()
+                if now >= next_scan:
+                    appid = await asyncio.to_thread(lsfg_status.running_appid)
+                    next_scan = now + 2
+                fps = self.fps.current() if appid else None
+                label = lsfg_fps.label(fps, await self._live_multiplier(appid) if fps else 1)
+                self.fps_label = label
+                if label and (overlay is None or overlay.poll() is not None) and now >= retry_at:
+                    if overlay is not None:
+                        decky.logger.warning(f"FPS overlay ended with {overlay.returncode}; restarting")
+                    overlay, sent, retry_at = self._spawn_overlay(), None, now + 10
+                if overlay is not None and overlay.poll() is None and label != sent:
+                    try:
+                        overlay.stdin.write(label + "\n")
+                        overlay.stdin.flush()
+                        sent = label
+                    except OSError:
+                        sent = None
+                await asyncio.sleep(0.25)
+        finally:
+            if overlay is not None and overlay.poll() is None:
+                try:
+                    overlay.stdin.close()  # the window closes with its input
+                    await asyncio.to_thread(overlay.wait, 3)
+                except (OSError, subprocess.TimeoutExpired):
+                    overlay.kill()
+
+    def _spawn_overlay(self):
+        # The system python3 with a clean environment: Decky's own libraries (LD_LIBRARY_PATH) must not leak in.
+        # :0 is the X server gamescope gives Steam and its overlays.
+        env = {"DISPLAY": ":0", "HOME": _home(), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+        try:
+            log = open(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "overlay.log"), "w", encoding="utf-8")
+            with log:
+                return subprocess.Popen(["/usr/bin/python3", "-I", os.path.join(PLUGIN_DIR, "lsfg_overlay.py")],
+                                        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log, env=env,
+                                        text=True)
+        except OSError as e:
+            decky.logger.error(f"FPS overlay could not start: {e}")
+            return None
 
     async def _live_multiplier(self, appid):
         if type(appid) is not int or appid <= 0:
@@ -270,7 +327,9 @@ class Plugin:
         return await self.get_state(appid, name)
 
     async def _unload(self):
-        self.fps.stop()
+        self._stop_counter()
+        if self.fps_task:
+            await asyncio.gather(self.fps_task, return_exceptions=True)
 
     async def _uninstall(self):
         # Decky runs this on every plugin update too (uninstall + install), so lsfg-vk stays; "Remove lsfg-vk"

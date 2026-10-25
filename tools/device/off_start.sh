@@ -2,8 +2,9 @@
 # off_start.sh <appid> <name>: start a game whose profile is Off, then turn it on live; prints lsfg-vk's log.
 set -u
 appid=$1 name=$2 D=$(dirname "$0")
+bash "$D/busy.sh" "$appid" || exit 1
 stop() { bash "$D/stop_game.sh" "$appid"; sleep 3; }
-call() { bash "$D/lscall.sh" set_profile "[\"$appid\"]" "\"$name\"" "$1" 1.0 true "$2" >/dev/null; }
+call() { bash "$D/lscall.sh" set_profile "[\"$appid\"]" "\"$name\"" "{\"multiplier\": $1, \"flow_scale\": 1.0, \"performance_mode\": true, \"override_present_mode\": true, \"preserve_swapchain_image_count\": false}" "$2" >/dev/null; }
 stop
 call 1 0
 DISPLAY=:0 nohup steam "steam://rungameid/$appid" >/dev/null 2>&1 &

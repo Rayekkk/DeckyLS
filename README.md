@@ -164,8 +164,10 @@ profile.
 The **FPS counter** reads gamescope's stats pipe (`/run/user/<uid>/gamescope.*/stats.pipe`), which reports
 the rate of the frames the game hands gamescope, generated ones included; nothing else on SteamOS reads it,
 and DeckyLS reads it only while the counter is on. The game's own rate is that divided by the multiplier,
-shown only once lsfg-vk's log says it joined the game. The label is drawn in the Steam UI layer that
-gamescope puts over games (where Steam's notifications appear) and ignores touch and clicks.
+shown only once lsfg-vk's log says it joined the game. The label is drawn by a small helper process
+(`lsfg_overlay.py`, the system Python with libX11 and cairo) in a transparent window marked
+`GAMESCOPE_EXTERNAL_OVERLAY` and `GAMESCOPE_NO_FOCUS`, as Steam's own performance overlay is: gamescope
+keeps it on top of the game and never gives it focus or input.
 
 lsfg-vk is not part of the plugin. It is licensed CC BY-NC-ND 4.0, so DeckyLS never changes or
 ships it: **Install lsfg-vk** downloads the author's release archive from `builds.lsfg-vk.dev`,

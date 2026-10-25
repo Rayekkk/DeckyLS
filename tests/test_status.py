@@ -40,6 +40,8 @@ class StatusTest(unittest.TestCase):
                                if hasattr(os, "sysconf") else 0.0)
         self.assertEqual(s.find_game(3000000001, os.path.join(self.root, "proc"))["exe"], "RetroArch.AppImage")
         self.assertIsNone(s.find_game(180954, os.path.join(self.root, "proc")))  # AppId=1809540 is not 180954
+        self.assertIn(s.running_appid(os.path.join(self.root, "proc")), (1809540, 3000000001), "a reaper, not the wrapper")
+        self.assertEqual(s.running_appid(os.path.join(self.root, "nothing")), 0)
 
     def test_latest_using_profile_line_wins(self):
         lines = ["steam: (lsfg-vk) [INFO]: Using profile with name 'Old' (identified via executable)",
