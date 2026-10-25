@@ -12,7 +12,6 @@ import json
 import math
 import os
 import sys
-import time
 
 import decky
 
@@ -21,8 +20,6 @@ if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
 import lsfg_config  # noqa: E402
-import lsfg_fps  # noqa: E402
-import lsfg_mangohud  # noqa: E402
 import lsfg_games  # noqa: E402
 import lsfg_install  # noqa: E402
 import lsfg_status  # noqa: E402
@@ -102,24 +99,6 @@ class Plugin:
         self.lock = asyncio.Lock()
         self.busy = ""
         self.error = ""
-        self.settings_path = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "settings.json")
-        try:
-            with open(self.settings_path, encoding="utf-8") as f:
-                saved = json.load(f)
-        except (OSError, ValueError):
-            saved = {}
-        self.fps_counter = isinstance(saved, dict) and saved.get("fps_counter") is True
-        self.fps = lsfg_fps.Reader(lsfg_fps.pipe_pattern() if hasattr(os, "getuid") else "")
-        self.live = {}  # appid -> what the FPS counter knows about that game's session
-        self.fps_task = None
-        self.fps_label = ""  # what the counter shows right now
-        # The user's runtime dir (Decky's backend may not have XDG_RUNTIME_DIR); mangoapp reads the text there.
-        self.runtime_dir = f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else os.path.join(
-            decky.DECKY_PLUGIN_SETTINGS_DIR, "run")
-        self.fps_text_path = lsfg_mangohud.text_path(self.runtime_dir)
-        if self.fps_counter:
-            await asyncio.to_thread(self._show_in_overlay, True)  # a plugin update may bring new presets
-            self._start_counter()
 
     async def get_state(self, appid: int = 0, name: str = "") -> dict:
         home = _home()
@@ -135,8 +114,6 @@ class Plugin:
             "lossless_scaling": lsfg_status.lossless_scaling(home),
             "rivals": lsfg_status.rival_plugins(PLUGIN_DIR),
             "config_error": "",
-            "fps_counter": self.fps_counter,
-            "fps_label": self.fps_label if self.fps_counter else "",
             "games": [],
             "game": None,
         }
@@ -194,105 +171,6 @@ class Plugin:
         return await self._change(lambda data: data["global"].update(allow_fp16=allowed),
                                   f"allow_fp16 = {allowed}", appid, game_name)
 
-    async def set_fps_counter(self, enabled: bool, appid: int = 0, game_name: str = "") -> dict:
-        if type(enabled) is not bool:
-            self.error = "Invalid settings were rejected."
-            return await self.get_state(appid, game_name)
-        if enabled and not await asyncio.to_thread(self._show_in_overlay, True):
-            self.error = (f"{lsfg_mangohud.presets_path(_home())} is your own MangoHud presets file, so DeckyLS "
-                          "leaves it alone and cannot add the FPS line. Move it away to use the FPS counter.")
-            return await self.get_state(appid, game_name)
-        tmp = self.settings_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"fps_counter": enabled}, f)
-        os.replace(tmp, self.settings_path)
-        self.fps_counter, self.error = enabled, ""
-        if enabled:
-            self._start_counter()
-        else:
-            self._stop_counter()
-            await asyncio.to_thread(self._show_in_overlay, False)
-        return await self.get_state(appid, game_name)
-
-    def _show_in_overlay(self, on):
-        """Add the FPS line to Steam's performance overlay, or take it out; False if a foreign presets file is
-        in the way."""
-        path = lsfg_mangohud.presets_path(_home())
-        try:
-            if on:
-                if not lsfg_mangohud.install(path):
-                    return False
-            else:
-                lsfg_mangohud.remove(path)
-                lsfg_mangohud.write_text(self.fps_text_path, "")
-        except OSError as e:
-            decky.logger.error(f"MangoHud presets: {e}")
-            return False
-        lsfg_mangohud.reload_overlay(self.runtime_dir)
-        return True
-
-    def _start_counter(self):
-        self.fps.start()
-        if self.fps_task is None or self.fps_task.done():
-            self.fps_task = asyncio.get_running_loop().create_task(self._counter())
-
-    def _stop_counter(self):
-        self.fps.stop()
-        self.fps_label = ""
-        if self.fps_task:
-            self.fps_task.cancel()
-
-    async def _counter(self):
-        """Keep the text Steam's performance overlay shows current while the counter is on: a new gamescope
-        reading arrives a few times a second, the running game is looked up every 2 s, and the file is rewritten at
-        least every second so the overlay knows it is fresh."""
-        appid, next_scan, written, written_at = 0, 0.0, None, 0.0
-        try:
-            while True:
-                now = time.monotonic()
-                if now >= next_scan:
-                    appid = await asyncio.to_thread(lsfg_status.running_appid)
-                    next_scan = now + 2
-                fps = self.fps.current() if appid else None
-                label = lsfg_fps.label(fps, await self._live_multiplier(appid) if fps else 1)
-                self.fps_label = label
-                if label != written or (label and now - written_at >= 1):
-                    try:
-                        await asyncio.to_thread(lsfg_mangohud.write_text, self.fps_text_path, label)
-                        written, written_at = label, now
-                    except OSError as e:
-                        decky.logger.error(f"FPS counter text: {e}")
-                await asyncio.sleep(0.25)
-        finally:
-            try:
-                lsfg_mangohud.write_text(self.fps_text_path, "")
-            except OSError:
-                pass
-
-    async def _live_multiplier(self, appid):
-        if type(appid) is not int or appid <= 0:
-            return 1
-        # lsfg-vk joins a game only when it starts; until its log says it did, the file's multiplier is not on
-        # screen. The journal is read once per game, and again every few seconds while lsfg-vk has not joined.
-        now = time.monotonic()
-        known = self.live.get(appid)
-        if known is None or (known["attached"] is None and now - known["checked"] > 5):
-            running = await asyncio.to_thread(lsfg_status.find_game, appid)
-            attached = None
-            if running and running["started"]:
-                attached = lsfg_status.attached_profile(
-                    await asyncio.to_thread(lsfg_status.journal_since, running["started"]))
-            known = {"ids": _ids(appid, running["exe"] if running else ""), "attached": attached, "checked": now}
-            self.live = {appid: known}
-        if known["attached"] is None:
-            return 1
-        try:
-            profile = lsfg_config.find(lsfg_config.load(self.config_path), known["ids"])
-        except lsfg_config.ConfigError:
-            return 1
-        multiplier = profile.get("multiplier", LSFG_DEFAULTS["multiplier"]) if profile else 1
-        return multiplier if type(multiplier) is int and multiplier >= 1 else 1
-
     async def remove_profile(self, ids: list, appid: int = 0, game_name: str = "") -> dict:
         """Keep lsfg-vk out of the game matching ids (the list's switch turned off)."""
         if not _valid_ids(ids):
@@ -334,9 +212,7 @@ class Plugin:
         return await self.get_state(appid, name)
 
     async def _unload(self):
-        self._stop_counter()
-        if self.fps_task:
-            await asyncio.gather(self.fps_task, return_exceptions=True)
+        pass
 
     async def _uninstall(self):
         # Decky runs this on every plugin update too (uninstall + install), so lsfg-vk stays; "Remove lsfg-vk"

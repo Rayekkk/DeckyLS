@@ -29,8 +29,6 @@ interface State {
   rivals: string[];
   config_error: string;
   allow_fp16: boolean;
-  fps_counter: boolean;
-  fps_label: string;
   games: Entry[];
   game: {
     appid: number; name: string; ids: string[]; running: boolean;
@@ -44,7 +42,6 @@ const getState = callable<GameArgs, State>("get_state");
 const setProfile = callable<[string[], string, Settings, ...GameArgs], State>("set_profile");
 const removeProfile = callable<[string[], ...GameArgs], State>("remove_profile");
 const setFp16 = callable<[boolean, ...GameArgs], State>("set_fp16");
-const setFpsCounter = callable<[boolean, ...GameArgs], State>("set_fps_counter");
 const installLsfg = callable<GameArgs, State>("install_lsfg");
 const removeLsfg = callable<GameArgs, State>("remove_lsfg");
 
@@ -249,12 +246,6 @@ const Content: FC = () => {
             checked={state.allow_fp16}
             description="Faster on AMD graphics, such as the Steam Deck, Legion Go and ROG Ally, with the same image. Turn off only on an old NVIDIA GTX 10 card. Applies the next time a game starts."
             onChange={v => run((...g) => setFp16(v, ...g))} />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField label="FPS counter" checked={state.fps_counter}
-            description={state.fps_counter && state.fps_label ? `Now: ${state.fps_label}`
-              : "Adds the game's own frame rate to Steam's performance overlay while frame generation runs, for example LSFG 3x - base 48 FPS next to the FPS you see. Shown at overlay levels 2 to 4."}
-            onChange={v => run((...g) => setFpsCounter(v, ...g))} />
         </PanelSectionRow>
       </PanelSection>
 

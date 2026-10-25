@@ -39,9 +39,7 @@ function harness(runningApp) {
       throw Error(name);
     },
   });
-  const render = (component = 'Content') => {
-    cursor = 0; const tree = mod.exports[component]({}); pending.splice(0).forEach(fn => fn()); return tree;
-  };
+  const render = () => { cursor = 0; const tree = mod.exports.Content({}); pending.splice(0).forEach(fn => fn()); return tree; };
   return {
     render, calls, timers,
     respond(name, value) {
@@ -148,7 +146,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.respond('get_state', listed);
     await settle();
     let tree = h.render();
-    const toggles = t => all(t).filter(n => n.type === 'ToggleField' && !['Half precision (FP16)', 'FPS counter'].includes(n.props.label)).map(n => n.props.label);
+    const toggles = t => all(t).filter(n => n.type === 'ToggleField' && n.props.label !== 'Half precision (FP16)').map(n => n.props.label);
     const expand = all(tree).find(n => n.type === 'ButtonItem' && String(n.props.children).startsWith('Show games'));
     assert.equal(expand.props.children, 'Show games (2 on)');
     assert.deepEqual(toggles(tree), [], 'collapsed by default');
@@ -186,16 +184,6 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.ok(all(tree).some(n => n.type?.name === 'Note' && String(n.props.children).includes('Betas')), 'wrong Steam branch is explained');
     install.props.onClick();
     assert.ok(h.calls.some(c => c.name === 'install_lsfg'));
-  }
-
-  // FPS counter: one switch under All games; the backend draws the counter in its own overlay window.
-  {
-    const panel = harness({ appid: 1809540, display_name: 'Nine Sols' });
-    panel.render();
-    panel.respond('get_state', { ...base, fps_counter: false });
-    await settle();
-    find(panel.render(), 'ToggleField', 'FPS counter').props.onChange(true);
-    assert.deepEqual(panel.calls.find(c => c.name === 'set_fps_counter').args, [true, 1809540, 'Nine Sols']);
   }
   console.log('frontend panel: ok');
 })().catch(e => { console.error(e); process.exit(1); });
