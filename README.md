@@ -27,7 +27,8 @@ for the running game and tells you whether frame generation really runs.
 | Feature | What you get |
 |---|---|
 | **One-tap setup** | Installs the official lsfg-vk 2.0.0 from its author's site and checks it against a pinned hash |
-| **One menu** | Frame generation **Off / 2× / 3× / 4×**, flow scale and performance mode for the game you are playing |
+| **One menu** | Frame generation **Off / 2× – 8×**, flow scale and performance mode for the game you are playing |
+| **Compatibility options** | Folded away until a game needs them: **Force V-Sync** and **Keep the game's buffer count**, plus a global **Half precision (FP16)** switch |
 | **All your games** | Every installed game in alphabetical order, Steam and non-Steam, with an On / Off switch to prepare it before you start it |
 | **Live changes** | Every change reaches the running game within a second |
 | **No launch options** | Your games' launch options stay untouched, so other launch-option tools keep working |
@@ -72,7 +73,7 @@ uninstall plus install, so the plugin never removes lsfg-vk on its own. Your gam
 
 ## Quick start
 
-<a href="docs/screenshots/panel.png"><img src="docs/screenshots/panel.png" alt="DeckyLS in the Quick Access Menu while Nine Sols runs at 3×" width="360"></a>
+<a href="docs/screenshots/panel.png"><img src="docs/screenshots/panel.png" alt="DeckyLS in the Quick Access Menu while Katana ZERO runs at 3× with the compatibility options open" width="360"></a>
 
 1. Open **Quick Access Menu → DeckyLS → Show games** and turn your game **On**. lsfg-vk is now
    ready in it; frame generation itself stays at 1×.
@@ -111,6 +112,8 @@ follows fast motion better. **Performance mode** uses a lighter model that suits
 | "…conf.toml cannot be read…" | Fix or delete `~/.config/lsfg-vk/conf.toml`; DeckyLS never overwrites a file it cannot read. Your earlier file is in `conf.toml.bak-deckyls` |
 | **About** shows a health-check report instead of **Healthy** | Follow what it says; it comes from lsfg-vk's own `lsfg-vk-cli healthcheck` |
 | Ghosting or wobbly edges | Raise **Flow scale**, turn off **Performance mode**, or raise the base frame rate |
+| The game crashes or freezes with frame generation | Open **Compatibility options**, turn on **Keep the game's buffer count** and restart the game |
+| The game stutters or misbehaves only with frame generation | Try **Compatibility options → Force V-Sync** off and restart the game; turn it back on if frame pacing gets uneven |
 | Download failed | Read the error and retry; nothing is installed from a failed or mismatched download |
 
 **Reporting a problem:** include the DeckyLS version, SteamOS version, the game, whether it runs on

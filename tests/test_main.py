@@ -9,6 +9,11 @@ import lsfg_config
 import main
 
 
+def settings(**changes):
+    return {"multiplier": 2, "flow_scale": 1.0, "performance_mode": True, "override_present_mode": True,
+            "preserve_swapchain_image_count": False, **changes}
+
+
 class MainTest(unittest.TestCase):
     def setUp(self):
         self.plugin = main.Plugin()
@@ -21,28 +26,45 @@ class MainTest(unittest.TestCase):
     def call(self, *args, **kw):
         return asyncio.run(self.plugin.set_profile(*args, **kw))
 
-    def test_running_game_gets_a_profile_and_its_state(self):
-        state = self.call(["1809540"], "Nine Sols", 3, 0.8, True, appid=1809540)
-        self.assertEqual(state["error"], "")
-        self.assertEqual(state["game"]["settings"]["multiplier"], 3)
-        self.assertEqual(state["game"]["ids"], ["1809540"])
+    def saved(self):
         with open(self.plugin.config_path, "rb") as f:
-            self.assertEqual(tomllib.load(f)["profile"][0]["flow_scale"], 0.8)
+            return tomllib.load(f)
+
+    def test_running_game_gets_a_profile_and_its_state(self):
+        state = self.call(["1809540"], "Nine Sols", settings(multiplier=8, flow_scale=0.8,
+                                                             preserve_swapchain_image_count=True), appid=1809540)
+        self.assertEqual(state["error"], "")
+        self.assertEqual(state["game"]["settings"]["multiplier"], 8)
+        self.assertEqual(state["game"]["ids"], ["1809540"])
+        profile = self.saved()["profile"][0]
+        self.assertEqual((profile["flow_scale"], profile["preserve_swapchain_image_count"], profile["override_present_mode"]),
+                         (0.8, True, True))
 
     def test_bad_input_from_the_panel_never_reaches_the_file(self):
-        for args in ((["1"], "x", 5, 1.0, True), (["1"], "x", True, 1.0, True), (["1"], "x", 2, 0.1, True),
-                     (["1"], "x", 2, float("nan"), True), (["1"], "x", 2, 1.0, "yes"), ([], "x", 2, 1.0, True),
-                     ([1], "x", 2, 1.0, True), ("1", "x", 2, 1.0, True), (["1"], None, 2, 1.0, True)):
-            state = self.call(*args)
-            self.assertEqual(state["error"], "Invalid settings were rejected.", args)
+        bad = [settings(multiplier=9), settings(multiplier=0), settings(multiplier=True), settings(multiplier=2.0),
+               settings(flow_scale=0.1), settings(flow_scale=float("nan")), settings(flow_scale=True),
+               settings(performance_mode="yes"), settings(override_present_mode=1),
+               settings(preserve_swapchain_image_count=None), settings(extra=1), {"multiplier": 2}, None]
+        for value in bad:
+            self.assertEqual(self.call(["1"], "x", value)["error"], "Invalid settings were rejected.", value)
+        for ids, name in (([], "x"), ([1], "x"), ("1", "x"), (["1"], None)):
+            self.assertEqual(self.call(ids, name, settings())["error"], "Invalid settings were rejected.", ids)
+        self.assertEqual(asyncio.run(self.plugin.set_fp16("no"))["error"], "Invalid settings were rejected.")
         self.assertFalse(os.path.exists(self.plugin.config_path))
 
+    def test_fp16_is_a_global_switch_that_keeps_the_profiles(self):
+        self.assertTrue(asyncio.run(self.plugin.get_state())["allow_fp16"], "lsfg-vk's default is on")
+        self.call(["1"], "x", settings())
+        state = asyncio.run(self.plugin.set_fp16(False))
+        self.assertFalse(state["allow_fp16"])
+        self.assertEqual(self.saved()["global"], {"allow_fp16": False})
+        self.assertEqual(self.saved()["profile"][0]["name"], "x")
+
     def test_list_switch_prepares_and_removes_a_game_without_touching_the_running_one(self):
-        self.call(["1145360"], "Hades", 1, 1.0, True, appid=1809540, game_name="Nine Sols")
+        self.call(["1145360"], "Hades", settings(multiplier=1), appid=1809540, game_name="Nine Sols")
         state = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))
         self.assertEqual((state["error"], state["game"]["name"]), ("", "Nine Sols"))
-        with open(self.plugin.config_path, "rb") as f:
-            self.assertEqual(tomllib.load(f)["profile"], [lsfg_config.PLACEHOLDER])
+        self.assertEqual(self.saved()["profile"], [lsfg_config.PLACEHOLDER])
         self.assertFalse(any(e["name"] == lsfg_config.PLACEHOLDER["name"] for e in state["games"]))
         bad = asyncio.run(self.plugin.remove_profile("1145360", 0, ""))
         self.assertEqual(bad["error"], "Invalid settings were rejected.")
@@ -56,7 +78,9 @@ class MainTest(unittest.TestCase):
                  {"appid": 0x80000001, "name": "Ärger", "exe": "Arger.exe"}]
         library = {e["name"]: e for e in main._library(games, data)}
         self.assertEqual(sorted(library), ["Hades", "Nine Sols", "genshin", "Ärger"], "no 'empty' profile without ids")
-        self.assertEqual(library["Nine Sols"]["settings"]["multiplier"], 3)
+        # Keys a profile leaves out show what lsfg-vk itself uses, not DeckyLS's choices for new games.
+        self.assertEqual({k: v for k, v in library["Nine Sols"]["settings"].items() if k not in ("name", "ids")},
+                         {**main.LSFG_DEFAULTS, "multiplier": 3})
         self.assertIsNone(library["Hades"]["settings"])
         self.assertEqual((library["genshin"]["appid"], library["genshin"]["ids"]), (0, ["GenshinImpact.exe"]))
         self.assertEqual(library["Ärger"]["ids"], [str(0x80000001), "Arger.exe"])

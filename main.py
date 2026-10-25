@@ -30,8 +30,11 @@ try:
 except (OSError, ValueError, KeyError):
     VERSION = "0.0.0"
 
-MULTIPLIERS = (1, 2, 3, 4)  # 1 = off
-DEFAULTS = {"multiplier": 2, "flow_scale": 1.0, "performance_mode": True}  # performance mode suits handheld GPUs
+MAX_MULTIPLIER = 8  # lsfg-vk has no limit; past 8x a handheld's base frame rate is too low to be worth it
+# What lsfg-vk uses for a key a profile leaves out (lsfg-vk.dev/docs/configuration/configuration-options).
+LSFG_DEFAULTS = {"multiplier": 2, "flow_scale": 1.0, "performance_mode": False, "override_present_mode": True,
+                 "preserve_swapchain_image_count": False}
+SWITCHES = ("performance_mode", "override_present_mode", "preserve_swapchain_image_count")
 SHORTCUT_BIT = 0x80000000  # non-Steam shortcuts have the top bit of their app id set
 
 
@@ -52,9 +55,21 @@ def _valid_ids(ids):
     return isinstance(ids, list) and 1 <= len(ids) <= 8 and all(isinstance(i, str) and 0 < len(i) <= 128 for i in ids)
 
 
+def _settings(value):
+    """The panel's settings for one game, checked and normalised, or None when anything is off."""
+    if not isinstance(value, dict) or value.keys() != LSFG_DEFAULTS.keys():
+        return None
+    multiplier, flow = value["multiplier"], value["flow_scale"]
+    if (type(multiplier) is not int or not 1 <= multiplier <= MAX_MULTIPLIER
+            or type(flow) not in (int, float) or not math.isfinite(flow) or not 0.25 <= flow <= 1.0
+            or any(type(value[k]) is not bool for k in SWITCHES)):
+        return None
+    return {**value, "flow_scale": round(float(flow), 2)}
+
+
 def _view(profile):
-    return {k: profile.get(k, v) for k, v in DEFAULTS.items()} | {"name": profile.get("name", ""),
-                                                                    "ids": lsfg_config.profile_ids(profile)}
+    return {k: profile.get(k, v) for k, v in LSFG_DEFAULTS.items()} | {"name": profile.get("name", ""),
+                                                                         "ids": lsfg_config.profile_ids(profile)}
 
 
 def _library(games, data):
@@ -107,6 +122,7 @@ class Plugin:
         except lsfg_config.ConfigError as e:
             state["config_error"] = str(e)
             data = None
+        state["allow_fp16"] = bool(data["global"].get("allow_fp16", True)) if data else True
         state["games"] = _library(await asyncio.to_thread(lsfg_games.installed, home), data)
         if isinstance(appid, int) and appid > 0:
             running = await asyncio.to_thread(lsfg_status.find_game, appid)
@@ -137,19 +153,23 @@ class Plugin:
                 decky.logger.error(f"saving the lsfg-vk config failed: {e}")
         return await self.get_state(appid, game_name)
 
-    async def set_profile(self, ids: list, name: str, multiplier: int, flow_scale: float, performance_mode: bool,
-                          appid: int = 0, game_name: str = "") -> dict:
+    async def set_profile(self, ids: list, name: str, settings: dict, appid: int = 0, game_name: str = "") -> dict:
         """Create or change the profile matching ids."""
-        if (not _valid_ids(ids) or not isinstance(name, str)
-                or type(multiplier) is not int or multiplier not in MULTIPLIERS
-                or type(flow_scale) not in (int, float) or not math.isfinite(flow_scale)
-                or not 0.25 <= flow_scale <= 1.0 or not isinstance(performance_mode, bool)):
+        clean = _settings(settings)
+        if not _valid_ids(ids) or not isinstance(name, str) or clean is None:
             self.error = "Invalid settings were rejected."
             return await self.get_state(appid, game_name)
         return await self._change(
-            lambda data: lsfg_config.set_profile(data, name.strip()[:128] or ids[0], ids, multiplier,
-                                                 round(float(flow_scale), 2), performance_mode),
-            f"profile {ids}: x{multiplier} flow {flow_scale} performance {performance_mode}", appid, game_name)
+            lambda data: lsfg_config.set_profile(data, name.strip()[:128] or ids[0], ids, clean),
+            f"profile {ids}: {clean}", appid, game_name)
+
+    async def set_fp16(self, allowed: bool, appid: int = 0, game_name: str = "") -> dict:
+        """lsfg-vk's global allow_fp16: half precision, much faster on AMD GPUs at the same quality."""
+        if type(allowed) is not bool:
+            self.error = "Invalid settings were rejected."
+            return await self.get_state(appid, game_name)
+        return await self._change(lambda data: data["global"].update(allow_fp16=allowed),
+                                  f"allow_fp16 = {allowed}", appid, game_name)
 
     async def remove_profile(self, ids: list, appid: int = 0, game_name: str = "") -> dict:
         """Keep lsfg-vk out of the game matching ids (the list's switch turned off)."""

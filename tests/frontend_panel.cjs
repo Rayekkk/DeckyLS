@@ -19,7 +19,9 @@ function harness(runningApp) {
   };
   const el = (type, props) => (typeof type === 'function' && !['Note'].includes(type.name) ? type(props) : { type, props });
   const jsx = { jsx: el, jsxs: el, Fragment: 'Fragment' };
-  const callable = name => (...args) => new Promise((resolve, reject) => calls.push({ name, args, resolve, reject, settled: false }));
+  // Arguments are copied out of the sandbox, whose objects have their own Object prototype.
+  const callable = name => (...args) => new Promise((resolve, reject) =>
+    calls.push({ name, args: JSON.parse(JSON.stringify(args)), resolve, reject, settled: false }));
   const ui = new Proxy({ Router: { get MainRunningApp() { return runningApp; } } }, { get: (o, k) => (k in o ? o[k] : k) });
   const source = fs.readFileSync(path.join(root, 'src', 'index.tsx'), 'utf8') + '\nexport { Content };';
   const output = ts.transpileModule(source, { compilerOptions: {
@@ -58,8 +60,9 @@ const find = (tree, type, label) => all(tree).find(n => n.type === type && (labe
 const base = {
   version: '0.1.0', pinned: '2.0.0', lsfg: { ok: true, text: '', version: '2.0.0' }, managed: true,
   managed_version: '2.0.0', busy: '', error: '', lossless_scaling: { installed: true, dll: '/ls/lsfg-vk.dll' },
-  rivals: [], config_error: '', games: [], game: null,
+  rivals: [], config_error: '', allow_fp16: true, games: [], game: null,
 };
+const Q = { override_present_mode: true, preserve_swapchain_image_count: false };
 const game = (settings = null, attached = null) => ({ ...base, game: {
   appid: 1809540, name: 'Nine Sols', ids: ['1809540'], running: true, settings, attached } });
 
@@ -80,8 +83,8 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.equal(find(tree, 'DropdownItem', 'Frame generation').props.selectedOption, 2, 'shown before the backend answers');
     h.fire();
     const saved = h.calls.find(c => c.name === 'set_profile');
-    assert.deepEqual(saved.args, [['1809540'], 'Nine Sols', 2, 1, true, 1809540, 'Nine Sols']);
-    h.respond('set_profile', game({ name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true }));
+    assert.deepEqual(saved.args, [['1809540'], 'Nine Sols', { multiplier: 2, flow_scale: 1, performance_mode: true, ...Q }, 1809540, 'Nine Sols']);
+    h.respond('set_profile', game({ name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q }));
     await settle();
     tree = h.render();
     assert.match(find(tree, 'Field', 'Status').props.description, /Restart the game/);
@@ -91,7 +94,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
   {
     const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
-    const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 3, flow_scale: 1, performance_mode: true };
+    const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 3, flow_scale: 1, performance_mode: true, ...Q };
     h.respond('get_state', game(on, { profile: 'Nine Sols', via: 'Steam App ID' }));
     await settle();
     let tree = h.render();
@@ -101,7 +104,30 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.fire();
     const saves = h.calls.filter(c => c.name === 'set_profile');
     assert.equal(saves.length, 1);
-    assert.deepEqual(saves[0].args, [['1809540'], 'Nine Sols', 3, 0.85, true, 1809540, 'Nine Sols']);
+    assert.deepEqual(saves[0].args, [['1809540'], 'Nine Sols', { multiplier: 3, flow_scale: 0.85, performance_mode: true, ...Q }, 1809540, 'Nine Sols']);
+  }
+
+  // Multipliers up to 8x; compatibility options are folded away and keep every other setting; FP16 is global.
+  {
+    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 0.8, performance_mode: false, ...Q };
+    h.respond('get_state', game(on, { profile: 'Nine Sols', via: 'Steam App ID' }));
+    await settle();
+    let tree = h.render();
+    assert.deepEqual(Array.from(find(tree, 'DropdownItem', 'Frame generation').props.rgOptions, o => o.label),
+      ['Off', '2×', '3×', '4×', '5×', '6×', '7×', '8×']);
+    assert.equal(find(tree, 'ToggleField', 'Force V-Sync'), undefined, 'compatibility options start folded');
+    all(tree).find(n => n.type === 'ButtonItem' && n.props.children === 'Compatibility options').props.onClick();
+    tree = h.render();
+    assert.equal(find(tree, 'ToggleField', 'Force V-Sync').props.checked, true);
+    find(tree, 'ToggleField', "Keep the game's buffer count").props.onChange(true);
+    h.fire();
+    assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args, [['1809540'], 'Nine Sols',
+      { multiplier: 2, flow_scale: 0.8, performance_mode: false, override_present_mode: true,
+        preserve_swapchain_image_count: true }, 1809540, 'Nine Sols'], 'only the changed key differs; no name or ids inside');
+    find(h.render(), 'ToggleField', 'Half precision (FP16)').props.onChange(false);
+    assert.deepEqual(h.calls.find(c => c.name === 'set_fp16').args, [false, 1809540, 'Nine Sols']);
   }
 
   // Games list: collapsed at first; expanded it is alphabetical without the running game. A switch turned on
@@ -109,7 +135,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
   {
     const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
-    const tuned = { name: 'Hades', ids: ['1145360'], multiplier: 3, flow_scale: 0.7, performance_mode: false };
+    const tuned = { name: 'Hades', ids: ['1145360'], multiplier: 3, flow_scale: 0.7, performance_mode: false, ...Q };
     const listed = { ...game(), games: [
       { appid: 2147483649, name: 'Shortcut', ids: ['2147483649', 'Game.exe'], settings: null },
       { appid: 1145360, name: 'Hades', ids: ['1145360'], settings: tuned },
@@ -120,7 +146,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.respond('get_state', listed);
     await settle();
     let tree = h.render();
-    const toggles = t => all(t).filter(n => n.type === 'ToggleField').map(n => n.props.label);
+    const toggles = t => all(t).filter(n => n.type === 'ToggleField' && n.props.label !== 'Half precision (FP16)').map(n => n.props.label);
     const expand = all(tree).find(n => n.type === 'ButtonItem' && String(n.props.children).startsWith('Show games'));
     assert.equal(expand.props.children, 'Show games (2 on)');
     assert.deepEqual(toggles(tree), [], 'collapsed by default');
@@ -135,7 +161,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     find(h.render(), 'ToggleField', 'Hades').props.onChange(false);
     h.fire();
     assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args,
-      [['2147483649', 'Game.exe'], 'Shortcut', 1, 1, true, 1809540, 'Nine Sols'], 'both switches saved, neither swallowed');
+      [['2147483649', 'Game.exe'], 'Shortcut', { multiplier: 1, flow_scale: 1, performance_mode: true, ...Q }, 1809540, 'Nine Sols'], 'both switches saved, neither swallowed');
     assert.deepEqual(h.calls.find(c => c.name === 'remove_profile').args, [['1145360'], 1809540, 'Nine Sols']);
     assert.equal(find(h.render(), 'ToggleField', 'Hades').props.checked, false);
   }

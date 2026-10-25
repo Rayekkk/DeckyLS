@@ -8,7 +8,11 @@ import {
 } from "@decky/ui";
 import { FC, useCallback, useEffect, useState } from "react";
 
-interface Settings { multiplier: number; flow_scale: number; performance_mode: boolean }
+// lsfg-vk profile keys, exactly as the backend accepts them.
+interface Settings {
+  multiplier: number; flow_scale: number; performance_mode: boolean;
+  override_present_mode: boolean; preserve_swapchain_image_count: boolean;
+}
 interface Profile extends Settings { name: string; ids: string[] }
 // An installed game (appid 0: a profile that matches no installed game); settings null = never set up.
 interface Entry { appid: number; name: string; ids: string[]; settings: Profile | null }
@@ -24,6 +28,7 @@ interface State {
   lossless_scaling: { installed: boolean; dll: string };
   rivals: string[];
   config_error: string;
+  allow_fp16: boolean;
   games: Entry[];
   game: {
     appid: number; name: string; ids: string[]; running: boolean;
@@ -34,15 +39,22 @@ interface State {
 
 type GameArgs = [appid: number, name: string];
 const getState = callable<GameArgs, State>("get_state");
-const setProfile = callable<[string[], string, number, number, boolean, ...GameArgs], State>("set_profile");
+const setProfile = callable<[string[], string, Settings, ...GameArgs], State>("set_profile");
 const removeProfile = callable<[string[], ...GameArgs], State>("remove_profile");
+const setFp16 = callable<[boolean, ...GameArgs], State>("set_fp16");
 const installLsfg = callable<GameArgs, State>("install_lsfg");
 const removeLsfg = callable<GameArgs, State>("remove_lsfg");
 
-const DEFAULTS: Settings = { multiplier: 2, flow_scale: 1.0, performance_mode: true };
-const MULTIPLIERS = [
-  { data: 1, label: "Off" }, { data: 2, label: "2×" }, { data: 3, label: "3×" }, { data: 4, label: "4×" },
-];
+// A new game's settings: lsfg-vk's own defaults, except performance mode, which suits handheld GPUs.
+const DEFAULTS: Settings = {
+  multiplier: 2, flow_scale: 1.0, performance_mode: true, override_present_mode: true,
+  preserve_swapchain_image_count: false,
+};
+const pick = (s: Settings): Settings => ({
+  multiplier: s.multiplier, flow_scale: s.flow_scale, performance_mode: s.performance_mode,
+  override_present_mode: s.override_present_mode, preserve_swapchain_image_count: s.preserve_swapchain_image_count,
+});
+const MULTIPLIERS = [{ data: 1, label: "Off" }, ...[2, 3, 4, 5, 6, 7, 8].map(m => ({ data: m, label: `${m}×` }))];
 const SAVE_DELAY_MS = 400; // the slider reports every step; lsfg-vk reloads the game's config on every write
 const REFRESH_MS = 5000;
 // Alphabetical as people read it in the Steam client's language: case and accents do not split the list.
@@ -80,6 +92,7 @@ const Content: FC = () => {
   const [draft, setDraft] = useState<Record<string, Settings | null>>({});
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showGames, setShowGames] = useState(false);
+  const [showCompat, setShowCompat] = useState(false);
 
   const refresh = useCallback(() => getState(...runningGame()).then(setState, () => {}), []);
   useEffect(() => {
@@ -94,7 +107,7 @@ const Content: FC = () => {
     clearTimeout(saveTimers[key]);
     saveTimers[key] = setTimeout(() => {
       delete saveTimers[key];
-      (next ? setProfile(profile.ids, profile.name, next.multiplier, next.flow_scale, next.performance_mode, ...runningGame())
+      (next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
         : removeProfile(profile.ids, ...runningGame()))
         .then(s => { setState(s); setDraft(d => { const { [key]: _, ...rest } = d; return rest; }); }, () => {});
     }, delay);
@@ -150,6 +163,7 @@ const Content: FC = () => {
               <PanelSectionRow>
                 <DropdownItem label="Frame generation" disabled={disabled} rgOptions={MULTIPLIERS}
                   selectedOption={on ? s.multiplier : 1}
+                  description="Multiplies the game's frame rate: 40 fps at 2× shows 80. Best when the result matches your screen's refresh rate."
                   onChange={o => save(profile, { ...s, multiplier: o.data })} />
               </PanelSectionRow>
               {on && (
@@ -170,6 +184,34 @@ const Content: FC = () => {
               <PanelSectionRow>
                 <Field focusable label="Status" description={status(game)} />
               </PanelSectionRow>
+              {saved && (
+                <PanelSectionRow>
+                  <ButtonItem layout="below" onClick={() => setShowCompat(v => !v)}
+                    description={showCompat ? undefined : "Only if this game has problems with frame generation."}>
+                    {showCompat ? "Hide compatibility options" : "Compatibility options"}
+                  </ButtonItem>
+                </PanelSectionRow>
+              )}
+              {saved && showCompat && (
+                <>
+                  <PanelSectionRow>
+                    <ToggleField label="Force V-Sync" disabled={disabled} checked={s.override_present_mode}
+                      description="On by default: frame generation needs it to space frames evenly. Turn off only if the game misbehaves with it."
+                      onChange={v => save(profile, { ...s, override_present_mode: v })} />
+                  </PanelSectionRow>
+                  <PanelSectionRow>
+                    <ToggleField label="Keep the game's buffer count" disabled={disabled}
+                      checked={s.preserve_swapchain_image_count}
+                      description="Try this if the game crashes with frame generation. Can cause stutter in other games."
+                      onChange={v => save(profile, { ...s, preserve_swapchain_image_count: v })} />
+                  </PanelSectionRow>
+                  <PanelSectionRow>
+                    <div style={{ fontSize: "12px", color: "var(--gpSystemLighterGrey, #b8bcbf)" }}>
+                      These two apply the next time the game starts.
+                    </div>
+                  </PanelSectionRow>
+                </>
+              )}
             </>
           );
         })()}
@@ -180,7 +222,7 @@ const Content: FC = () => {
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={() => setShowGames(v => !v)}
               description={showGames ? undefined
-                : "Turn a game on before you start it; while it runs, choose 2×, 3× or 4× above."}>
+                : "Turn a game on before you start it; while it runs, choose its multiplier above."}>
               {showGames ? "Hide games" : `Show games (${others.filter(e => e.settings).length} on)`}
             </ButtonItem>
           </PanelSectionRow>
@@ -197,6 +239,15 @@ const Content: FC = () => {
           })}
         </PanelSection>
       )}
+
+      <PanelSection title="All games">
+        <PanelSectionRow>
+          <ToggleField label="Half precision (FP16)" disabled={!installed || !!state.config_error}
+            checked={state.allow_fp16}
+            description="Faster on AMD graphics, such as the Steam Deck, Legion Go and ROG Ally, with the same image. Turn off only on an old NVIDIA GTX 10 card. Applies the next time a game starts."
+            onChange={v => run((...g) => setFp16(v, ...g))} />
+        </PanelSectionRow>
+      </PanelSection>
 
       <PanelSection title="About">
         <PanelSectionRow>

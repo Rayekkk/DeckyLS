@@ -2,6 +2,22 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.4.0] - 2026-10-25
+
+### Added
+
+- Frame generation up to **8×** (was 4×).
+- **Compatibility options** for the running game, folded away by default: **Force V-Sync** (on by
+  default; frame generation needs it for even pacing) and **Keep the game's buffer count** (for games
+  that crash with frame generation). They apply the next time the game starts.
+- **All games → Half precision (FP16)**: on by default and faster on AMD graphics with the same
+  image; turn it off only on an old NVIDIA GTX 10 card.
+
+### Fixed
+
+- A profile made by hand or by another tool that leaves a setting out now shows the value lsfg-vk
+  really uses (for example performance mode off), not DeckyLS's choice for new games.
+
 ## [0.3.0] - 2026-10-25
 
 ### Changed

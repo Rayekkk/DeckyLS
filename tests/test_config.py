@@ -34,7 +34,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_new_file_gets_one_profile_lsfg_vk_accepts(self):
         data = c.load(self.path)
-        c.set_profile(data, "Nine Sols", ["1809540"], 2, 1.0, True)
+        c.set_profile(data, "Nine Sols", ["1809540"], {"multiplier": 2, "flow_scale": 1.0, "performance_mode": True})
         c.save(self.path, data)
         with open(self.path, "rb") as f:
             saved = tomllib.load(f)
@@ -46,7 +46,7 @@ class ConfigTest(unittest.TestCase):
     def test_user_profiles_and_keys_survive_and_original_is_backed_up(self):
         self.write(USER_FILE)
         data = c.load(self.path)
-        c.set_profile(data, "Nine Sols", ["1809540"], 3, 0.85, False)
+        c.set_profile(data, "Nine Sols", ["1809540"], {"multiplier": 3, "flow_scale": 0.85, "performance_mode": False})
         c.save(self.path, data)
         with open(self.path, "rb") as f:
             saved = tomllib.load(f)
@@ -59,7 +59,7 @@ class ConfigTest(unittest.TestCase):
     def test_existing_profile_is_changed_in_place_and_gains_new_ids(self):
         self.write(USER_FILE)
         data = c.load(self.path)
-        c.set_profile(data, "ignored", ["vkcube", "123"], 1, 1.0, True)
+        c.set_profile(data, "ignored", ["vkcube", "123"], {"multiplier": 1, "flow_scale": 1.0, "performance_mode": True})
         self.assertEqual(len(data["profile"]), 1)
         p = data["profile"][0]
         self.assertEqual(p["name"], 'Genshin "Impact"')
@@ -69,7 +69,7 @@ class ConfigTest(unittest.TestCase):
     def test_turning_a_game_off_removes_only_its_ids_and_never_leaves_the_file_without_profiles(self):
         self.write(USER_FILE)
         data = c.load(self.path)
-        c.set_profile(data, "Nine Sols", ["1809540"], 1, 1.0, True)
+        c.set_profile(data, "Nine Sols", ["1809540"], {"multiplier": 1, "flow_scale": 1.0, "performance_mode": True})
         c.remove_ids(data, ["vkcube"])
         self.assertEqual(data["profile"][0]["active_in"], "GenshinImpact.exe", "the shared profile keeps its other game")
         c.remove_ids(data, ["GenshinImpact.exe", "1809540"])
@@ -77,7 +77,7 @@ class ConfigTest(unittest.TestCase):
         c.save(self.path, data)
         self.assertTrue(c.is_placeholder(c.load(self.path)["profile"][0]))
         data = c.load(self.path)
-        c.set_profile(data, "Hades", ["1145360"], 1, 1.0, True)
+        c.set_profile(data, "Hades", ["1145360"], {"multiplier": 1, "flow_scale": 1.0, "performance_mode": True})
         self.assertEqual([p["name"] for p in data["profile"]], ["Hades"], "the placeholder goes once a game is back")
 
     def test_unreadable_or_foreign_file_is_never_overwritten(self):
@@ -98,7 +98,7 @@ class ConfigTest(unittest.TestCase):
     def test_names_with_quotes_newlines_and_unicode_round_trip(self):
         data = c.load(self.path)
         name = 'Ä "quoted" \\ back\nslash ✓'
-        c.set_profile(data, name, ["1"], 2, 1.0, True)
+        c.set_profile(data, name, ["1"], {"multiplier": 2, "flow_scale": 1.0, "performance_mode": True})
         self.assertEqual(tomllib.loads(c.dumps(data))["profile"][0]["name"], name)
 
 

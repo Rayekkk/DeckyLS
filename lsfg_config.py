@@ -82,7 +82,8 @@ def remove_ids(data, ids):
     data["profile"] = kept or [dict(PLACEHOLDER)]
 
 
-def set_profile(data, name, ids, multiplier, flow_scale, performance_mode):
+def set_profile(data, name, ids, settings):
+    """Create or change the profile matching ids; settings are lsfg-vk profile keys and their values."""
     data["profile"] = [p for p in data["profile"] if not is_placeholder(p)]
     profile = find(data, ids)
     if profile is None:
@@ -93,9 +94,7 @@ def set_profile(data, name, ids, multiplier, flow_scale, performance_mode):
         missing = [i for i in ids if i not in known]
         if missing:
             profile["active_in"] = known + missing
-    # multiplier = 1 is lsfg-vk's own "off": the profile stays, so the game keeps its settings and the file is
-    # never left without profiles (lsfg-vk rejects that).
-    profile.update(multiplier=multiplier, flow_scale=flow_scale, performance_mode=performance_mode)
+    profile.update(settings)
     return profile
 
 
