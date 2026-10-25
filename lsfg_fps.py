@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Rayekkk
 
-"""The frame rate you see, from gamescope's stats pipe (gamescope -T .../stats.pipe writes "fps=<n>" lines).
+"""The frame rate on screen, from gamescope's stats pipe (gamescope -T .../stats.pipe writes "fps=<n>" lines).
 
 gamescope counts the frames the game hands it, so with lsfg-vk this is the generated rate; the game's own rate is
 that divided by the multiplier. The pipe is read only while the FPS counter is on. Nothing on SteamOS reads it
@@ -24,11 +24,11 @@ def pipe_pattern():
 
 
 def label(fps, multiplier):
-    """"base / shown FPS" while frame generation runs, "shown FPS" without it; "" hides the counter."""
-    if fps is None:
+    """The line for Steam's performance overlay, which already shows the rate on screen: the multiplier and the
+    game's own rate while frame generation runs, "" otherwise (nothing extra is shown)."""
+    if fps is None or multiplier <= 1:
         return ""
-    whole = lambda value: int(value + 0.5)  # noqa: E731 - round half up, as people read a counter
-    return f"{whole(fps / multiplier)} / {whole(fps)} FPS" if multiplier > 1 else f"{whole(fps)} FPS"
+    return f"LSFG {multiplier}x - base {int(fps / multiplier + 0.5)} FPS"  # ASCII: the overlay font may lack ×
 
 
 def last_fps(data):

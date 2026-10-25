@@ -6,11 +6,12 @@ All notable changes to DeckyLS, newest first.
 
 ### Fixed
 
-- The FPS counter showed only while the Quick Access Menu was open, and updated slowly. It now has its own
-  overlay window, the way Steam's performance overlay does, so it stays on screen over the game and changes
-  with every reading gamescope reports (a few times a second).
-- gamescope shows only one such overlay at a time, so the counter steps aside while Steam's performance
-  overlay is on. Set Steam's performance overlay level to Off to see it.
+- The FPS counter showed only while the Quick Access Menu was open. It is now a line in Steam's own
+  performance overlay, the one thing gamescope reliably shows over games: at overlay levels 2 to 4 it reads,
+  for example, **LSFG 3x - base 48 FPS** next to the FPS on screen, and updates twice a second. Without
+  frame generation the overlay is exactly as Steam makes it; level 1 is never changed.
+- To add the line, DeckyLS writes `~/.config/MangoHud/presets.conf`, and removes it when the counter is
+  turned off. A presets file of your own is never touched; the counter then stays off and says why.
 
 ## [0.5.0] - 2026-10-25
 

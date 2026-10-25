@@ -252,9 +252,8 @@ const Content: FC = () => {
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField label="FPS counter" checked={state.fps_counter}
-            description={state.fps_counter && state.fps_label
-              ? `Now: ${state.fps_label} (game / screen). Hidden while Steam's performance overlay is on.`
-              : "Shows the game's own frame rate and what you see with frame generation, for example 48 / 144 FPS, in the top-left corner while you play. It takes the place of Steam's performance overlay: set that overlay's level to Off to see the counter."}
+            description={state.fps_counter && state.fps_label ? `Now: ${state.fps_label}`
+              : "Adds the game's own frame rate to Steam's performance overlay while frame generation runs, for example LSFG 3x - base 48 FPS next to the FPS you see. Shown at overlay levels 2 to 4."}
             onChange={v => run((...g) => setFpsCounter(v, ...g))} />
         </PanelSectionRow>
       </PanelSection>

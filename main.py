@@ -11,7 +11,6 @@ import asyncio
 import json
 import math
 import os
-import subprocess
 import sys
 import time
 
@@ -23,6 +22,7 @@ if PLUGIN_DIR not in sys.path:
 
 import lsfg_config  # noqa: E402
 import lsfg_fps  # noqa: E402
+import lsfg_mangohud  # noqa: E402
 import lsfg_games  # noqa: E402
 import lsfg_install  # noqa: E402
 import lsfg_status  # noqa: E402
@@ -113,7 +113,12 @@ class Plugin:
         self.live = {}  # appid -> what the FPS counter knows about that game's session
         self.fps_task = None
         self.fps_label = ""  # what the counter shows right now
+        # The user's runtime dir (Decky's backend may not have XDG_RUNTIME_DIR); mangoapp reads the text there.
+        self.runtime_dir = f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else os.path.join(
+            decky.DECKY_PLUGIN_SETTINGS_DIR, "run")
+        self.fps_text_path = lsfg_mangohud.text_path(self.runtime_dir)
         if self.fps_counter:
+            await asyncio.to_thread(self._show_in_overlay, True)  # a plugin update may bring new presets
             self._start_counter()
 
     async def get_state(self, appid: int = 0, name: str = "") -> dict:
@@ -193,16 +198,38 @@ class Plugin:
         if type(enabled) is not bool:
             self.error = "Invalid settings were rejected."
             return await self.get_state(appid, game_name)
+        if enabled and not await asyncio.to_thread(self._show_in_overlay, True):
+            self.error = (f"{lsfg_mangohud.presets_path(_home())} is your own MangoHud presets file, so DeckyLS "
+                          "leaves it alone and cannot add the FPS line. Move it away to use the FPS counter.")
+            return await self.get_state(appid, game_name)
         tmp = self.settings_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"fps_counter": enabled}, f)
         os.replace(tmp, self.settings_path)
-        self.fps_counter = enabled
+        self.fps_counter, self.error = enabled, ""
         if enabled:
             self._start_counter()
         else:
             self._stop_counter()
+            await asyncio.to_thread(self._show_in_overlay, False)
         return await self.get_state(appid, game_name)
+
+    def _show_in_overlay(self, on):
+        """Add the FPS line to Steam's performance overlay, or take it out; False if a foreign presets file is
+        in the way."""
+        path = lsfg_mangohud.presets_path(_home())
+        try:
+            if on:
+                if not lsfg_mangohud.install(path):
+                    return False
+            else:
+                lsfg_mangohud.remove(path)
+                lsfg_mangohud.write_text(self.fps_text_path, "")
+        except OSError as e:
+            decky.logger.error(f"MangoHud presets: {e}")
+            return False
+        lsfg_mangohud.reload_overlay(self.runtime_dir)
+        return True
 
     def _start_counter(self):
         self.fps.start()
@@ -216,9 +243,10 @@ class Plugin:
             self.fps_task.cancel()
 
     async def _counter(self):
-        """Keep the overlay window's label current while the counter is on: a new gamescope reading arrives a few
-        times a second; the running game is looked up every 2 s."""
-        overlay, sent, appid, next_scan, retry_at = None, None, 0, 0.0, 0.0
+        """Keep the text Steam's performance overlay shows current while the counter is on: a new gamescope
+        reading arrives a few times a second, the running game is looked up every 2 s, and the file is rewritten at
+        least every second so the overlay knows it is fresh."""
+        appid, next_scan, written, written_at = 0, 0.0, None, 0.0
         try:
             while True:
                 now = time.monotonic()
@@ -228,40 +256,18 @@ class Plugin:
                 fps = self.fps.current() if appid else None
                 label = lsfg_fps.label(fps, await self._live_multiplier(appid) if fps else 1)
                 self.fps_label = label
-                if label and (overlay is None or overlay.poll() is not None) and now >= retry_at:
-                    if overlay is not None:
-                        decky.logger.warning(f"FPS overlay ended with {overlay.returncode}; restarting")
-                    overlay, sent, retry_at = self._spawn_overlay(), None, now + 10
-                if overlay is not None and overlay.poll() is None and label != sent:
+                if label != written or (label and now - written_at >= 1):
                     try:
-                        overlay.stdin.write(label + "\n")
-                        overlay.stdin.flush()
-                        sent = label
-                    except OSError:
-                        sent = None
+                        await asyncio.to_thread(lsfg_mangohud.write_text, self.fps_text_path, label)
+                        written, written_at = label, now
+                    except OSError as e:
+                        decky.logger.error(f"FPS counter text: {e}")
                 await asyncio.sleep(0.25)
         finally:
-            if overlay is not None and overlay.poll() is None:
-                try:
-                    overlay.stdin.close()  # the window closes with its input
-                    await asyncio.to_thread(overlay.wait, 3)
-                except (OSError, subprocess.TimeoutExpired):
-                    overlay.kill()
-
-    def _spawn_overlay(self):
-        # The system python3 with a clean environment: Decky's own libraries (LD_LIBRARY_PATH) must not leak in.
-        # :0 is Steam's X server: gamescope takes the external overlay from there only, whatever server the game
-        # is on (games usually get :1).
-        env = {"DISPLAY": ":0", "HOME": _home(), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
-        try:
-            log = open(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "overlay.log"), "w", encoding="utf-8")
-            with log:
-                return subprocess.Popen(["/usr/bin/python3", "-I", os.path.join(PLUGIN_DIR, "lsfg_overlay.py")],
-                                        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log, env=env,
-                                        text=True)
-        except OSError as e:
-            decky.logger.error(f"FPS overlay could not start: {e}")
-            return None
+            try:
+                lsfg_mangohud.write_text(self.fps_text_path, "")
+            except OSError:
+                pass
 
     async def _live_multiplier(self, appid):
         if type(appid) is not int or appid <= 0:
