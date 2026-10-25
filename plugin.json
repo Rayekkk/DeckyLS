@@ -1,0 +1,17 @@
+{
+  "name": "DeckyLS",
+  "author": "Rayek",
+  "flags": [],
+  "api_version": 1,
+  "main": "main.py",
+  "bin": "dist/index.js",
+  "version": "0.1.0",
+  "publish": {
+    "tags": [
+      "graphics",
+      "frame-generation"
+    ],
+    "description": "Lossless Scaling frame generation for the game you are playing: one menu, no launch options.",
+    "image": ""
+  }
+}

@@ -1,0 +1,17 @@
+DeckyLS
+Copyright (c) 2026 Rayekkk
+
+The plugin code (main.py, lsfg_*.py, src/, scripts/, tools/) is licensed under the BSD 3-Clause License, see LICENSE.
+
+third_party/decky-api contains the licence and source of @decky/api, which is compiled into dist/index.js.
+
+This package does NOT contain lsfg-vk or Lossless Scaling.
+
+lsfg-vk is made by PancakeTAS (https://lsfg-vk.dev) and licensed under CC BY-NC-ND 4.0. When asked to, DeckyLS
+downloads the unmodified official release archive from https://builds.lsfg-vk.dev on the user's device, checks it
+against a pinned SHA-256 hash and unpacks it into ~/.local, as lsfg-vk's own install guide describes. DeckyLS does
+not modify lsfg-vk; it only writes lsfg-vk's configuration file.
+
+Lossless Scaling is made by THS and sold on Steam; lsfg-vk uses files from the user's own installation of it.
+
+This project is not affiliated with or endorsed by PancakeTAS, THS or Valve.
