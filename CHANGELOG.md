@@ -2,6 +2,18 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.5.2] - 2026-10-25
+
+### Added
+
+- When Lossless Scaling is missing, **Open in the Steam Store** takes you to its store page; when it is on the
+  wrong branch, **Open Lossless Scaling in the library** takes you to its page, where Properties → Betas is.
+
+### Fixed
+
+- **Games** no longer lists Steam tools such as Ubisoft Connect Services (or Proton and Steam runtimes): only
+  games, applications, demos and non-Steam shortcuts, as Steam itself classifies them.
+
 ## [0.5.1] - 2026-10-25
 
 ### Removed

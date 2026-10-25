@@ -22,13 +22,20 @@ function harness(runningApp) {
   // Arguments are copied out of the sandbox, whose objects have their own Object prototype.
   const callable = name => (...args) => new Promise((resolve, reject) =>
     calls.push({ name, args: JSON.parse(JSON.stringify(args)), resolve, reject, settled: false }));
-  const ui = new Proxy({ Router: { get MainRunningApp() { return runningApp; } } }, { get: (o, k) => (k in o ? o[k] : k) });
+  const steam = [];  // what the panel asked Steam to open, in order
+  const Navigation = { CloseSideMenus: () => steam.push('close menus'), Navigate: p => steam.push(`navigate ${p}`) };
+  const ui = new Proxy({ Router: { get MainRunningApp() { return runningApp; } }, Navigation },
+    { get: (o, k) => (k in o ? o[k] : k) });
+  // Steam app types: 1 game, 4 tool (Ubisoft Connect Services, Proton...); apps not listed have no overview.
+  const appTypes = { 1145360: 1, 1809540: 1, 4099820: 4, 1493710: 4 };
+  const appStore = { GetAppOverviewByAppID: id => (id in appTypes ? { app_type: appTypes[id] } : null) };
+  const SteamClient = { URL: { ExecuteSteamURL: url => steam.push(`url ${url}`) } };
   const source = fs.readFileSync(path.join(root, 'src', 'index.tsx'), 'utf8') + '\nexport { Content };';
   const output = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const mod = { exports: {} };
   vm.runInNewContext(output, {
-    module: mod, exports: mod.exports, console,
+    module: mod, exports: mod.exports, console, appStore, SteamClient,
     setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
     clearTimeout: t => { if (t) t.done = true; }, setInterval: () => 1, clearInterval() {},
     require(name) {
@@ -41,7 +48,7 @@ function harness(runningApp) {
   });
   const render = () => { cursor = 0; const tree = mod.exports.Content({}); pending.splice(0).forEach(fn => fn()); return tree; };
   return {
-    render, calls, timers,
+    render, calls, timers, steam,
     respond(name, value) {
       const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
       call.settled = true; call.resolve(value); return call;
@@ -142,6 +149,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
       { appid: 1809540, name: 'Nine Sols', ids: ['1809540'], settings: null },
       { appid: 3, name: 'Ärger 10', ids: ['3'], settings: null },
       { appid: 4, name: 'Ärger 9', ids: ['4'], settings: null },
+      { appid: 4099820, name: 'Ubisoft Connect Services', ids: ['4099820'], settings: null },
       { appid: 0, name: 'genshin', ids: ['GenshinImpact.exe'], settings: { ...tuned, multiplier: 1, name: 'genshin', ids: ['GenshinImpact.exe'] } }] };
     h.respond('get_state', listed);
     await settle();
@@ -152,7 +160,8 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.deepEqual(toggles(tree), [], 'collapsed by default');
     expand.props.onClick();
     tree = h.render();
-    assert.deepEqual(toggles(tree), ['Ärger 9', 'Ärger 10', 'genshin', 'Hades', 'Shortcut'], 'alphabetical, running game on top only');
+    assert.deepEqual(toggles(tree), ['Ärger 9', 'Ärger 10', 'genshin', 'Hades', 'Shortcut'],
+      'alphabetical, running game on top only, Steam tools (Ubisoft Connect Services) left out');
     assert.equal(find(tree, 'ToggleField', 'Hades').props.description, '3× frame generation');
     assert.equal(find(tree, 'ToggleField', 'genshin').props.description, 'Ready');
     assert.equal(find(tree, 'ToggleField', 'Shortcut').props.checked, false);
@@ -182,8 +191,22 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     const install = all(tree).find(n => n.type === 'ButtonItem');
     assert.equal(install.props.children, 'Install lsfg-vk 2.0.0');
     assert.ok(all(tree).some(n => n.type?.name === 'Note' && String(n.props.children).includes('Betas')), 'wrong Steam branch is explained');
+    all(tree).find(n => n.type === 'ButtonItem' && n.props.children === 'Open Lossless Scaling in the library').props.onClick();
+    assert.deepEqual(h.steam, ['close menus', 'navigate /library/app/993090'], 'to its page, where Properties → Betas is');
     install.props.onClick();
     assert.ok(h.calls.some(c => c.name === 'install_lsfg'));
+  }
+
+  // Lossless Scaling not installed: its store page is one press away.
+  {
+    const h = harness(undefined);
+    h.render();
+    h.respond('get_state', { ...base, lossless_scaling: { installed: false, dll: '' } });
+    await settle();
+    const tree = h.render();
+    assert.equal(all(tree).find(n => n.type === 'ButtonItem' && n.props.children === 'Open Lossless Scaling in the library'), undefined);
+    all(tree).find(n => n.type === 'ButtonItem' && n.props.children === 'Open in the Steam Store').props.onClick();
+    assert.deepEqual(h.steam, ['close menus', 'url steam://store/993090']);
   }
   console.log('frontend panel: ok');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -104,8 +104,8 @@ follows fast motion better. **Performance mode** uses a lighter model that suits
 
 | What you see | What to do |
 |---|---|
-| "Install Lossless Scaling from Steam…" | Buy and install Lossless Scaling; lsfg-vk uses its files |
-| "In Steam, open Lossless Scaling → Properties → Betas…" | Switch Lossless Scaling to the **lsfg-vk** branch and let Steam update it |
+| "Install Lossless Scaling from Steam…" | Buy and install Lossless Scaling; lsfg-vk uses its files. **Open in the Steam Store** goes to its page |
+| "In Steam, open Lossless Scaling → Properties → Betas…" | Switch Lossless Scaling to the **lsfg-vk** branch and let Steam update it. **Open Lossless Scaling in the library** goes to its page |
 | Status still says restart after a restart | The game does not render through Vulkan (for example a native OpenGL game). If it has a Windows version, try it with Proton |
 | "Also installed: …" | Another plugin manages lsfg-vk too (Decky LSFG-VK, MAKO). Keep only one; uninstall the other |
 | "lsfg-vk is already installed by something else" | DeckyLS uses that installation. Remove it with the tool that installed it if you want DeckyLS to manage lsfg-vk |
@@ -140,8 +140,9 @@ performance_mode = true
 ```
 
 The **Games** list comes from Steam's own files, without starting anything: the app manifests in
-every Steam library (internal drive and SD card; Proton, Steam Linux Runtime and Lossless Scaling
-itself are left out) and the non-Steam shortcuts in `shortcuts.vdf`. Non-Steam games also get their
+every Steam library (internal drive and SD card) and the non-Steam shortcuts in `shortcuts.vdf`. Apps
+Steam classifies as tools (Proton, Steam Linux Runtime, redistributables, launcher services such as
+Ubisoft Connect Services) and Lossless Scaling itself are left out. Non-Steam games also get their
 executable name (for example `"Game.exe"`) from the shortcut, or from the command line Steam
 started them with. A game turned **On** in the list gets a profile with `multiplier = 1`, lsfg-vk's own
 off switch: lsfg-vk joins the game at its start but generates no frames until you choose 2× or more.

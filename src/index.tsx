@@ -3,8 +3,8 @@
 
 import { callable, definePlugin } from "@decky/api";
 import {
-  ButtonItem, DropdownItem, Field, PanelSection, PanelSectionRow, Router, SliderField, Spinner, staticClasses,
-  ToggleField,
+  ButtonItem, DropdownItem, Field, Navigation, PanelSection, PanelSectionRow, Router, SliderField, Spinner,
+  staticClasses, ToggleField,
 } from "@decky/ui";
 import { FC, useCallback, useEffect, useState } from "react";
 
@@ -59,6 +59,27 @@ const SAVE_DELAY_MS = 400; // the slider reports every step; lsfg-vk reloads the
 const REFRESH_MS = 5000;
 // Alphabetical as people read it in the Steam client's language: case and accents do not split the list.
 const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+declare const appStore: any;
+declare const SteamClient: any;
+const LOSSLESS_SCALING = 993090;
+// Steam's app types worth listing: game, application, demo, non-Steam shortcut. Tools (Proton, runtimes,
+// redistributables, launcher services such as Ubisoft Connect Services) are left out.
+const LISTED_TYPES = new Set([1, 2, 8, 0x40000000]);
+const isListed = (appid: number) => {
+  if (!appid) return true;  // a profile that matches no installed game
+  try {
+    const type = appStore?.GetAppOverviewByAppID(appid)?.app_type;
+    return type === undefined || LISTED_TYPES.has(type);
+  } catch {
+    return true;
+  }
+};
+
+const openInSteam = (open: () => void) => {
+  Navigation.CloseSideMenus();
+  open();
+};
 
 const runningGame = (): GameArgs => {
   const app = Router.MainRunningApp;
@@ -123,7 +144,7 @@ const Content: FC = () => {
   const installed = state.lsfg !== null;
   const ls = state.lossless_scaling;
   const game = state.game;
-  const others = state.games.filter(e => !game || !e.ids.some(i => game.ids.includes(i)))
+  const others = state.games.filter(e => isListed(e.appid) && (!game || !e.ids.some(i => game.ids.includes(i))))
     .sort((a, b) => byName.compare(a.name, b.name));
 
   return (
@@ -138,8 +159,28 @@ const Content: FC = () => {
               </ButtonItem>
             </PanelSectionRow>
           )}
-          {!ls.installed && <Note tone="warn">Install Lossless Scaling from Steam. Frame generation uses its files, so it must be bought and installed.</Note>}
-          {ls.installed && !ls.dll && <Note tone="warn">In Steam, open Lossless Scaling → Properties → Betas and choose "lsfg-vk", then let it update.</Note>}
+          {!ls.installed && (
+            <>
+              <Note tone="warn">Install Lossless Scaling from Steam. Frame generation uses its files, so it must be bought and installed.</Note>
+              <PanelSectionRow>
+                <ButtonItem layout="below"
+                  onClick={() => openInSteam(() => SteamClient.URL.ExecuteSteamURL(`steam://store/${LOSSLESS_SCALING}`))}>
+                  Open in the Steam Store
+                </ButtonItem>
+              </PanelSectionRow>
+            </>
+          )}
+          {ls.installed && !ls.dll && (
+            <>
+              <Note tone="warn">In Steam, open Lossless Scaling → Properties → Betas and choose "lsfg-vk", then let it update.</Note>
+              <PanelSectionRow>
+                <ButtonItem layout="below" description="Then press the gear icon → Properties → Betas."
+                  onClick={() => openInSteam(() => Navigation.Navigate(`/library/app/${LOSSLESS_SCALING}`))}>
+                  Open Lossless Scaling in the library
+                </ButtonItem>
+              </PanelSectionRow>
+            </>
+          )}
           {state.rivals.length > 0 && <Note tone="warn">Also installed: {state.rivals.join(", ")}. Use only one plugin to manage lsfg-vk.</Note>}
           {state.config_error && <Note tone="error">{state.config_error}</Note>}
           {state.error && <Note tone="error">{state.error}</Note>}
