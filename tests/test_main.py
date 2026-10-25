@@ -5,6 +5,7 @@ import tomllib
 import unittest
 
 import _harness  # noqa: F401
+import lsfg_config
 import main
 
 
@@ -35,6 +36,16 @@ class MainTest(unittest.TestCase):
             state = self.call(*args)
             self.assertEqual(state["error"], "Invalid settings were rejected.", args)
         self.assertFalse(os.path.exists(self.plugin.config_path))
+
+    def test_list_switch_prepares_and_removes_a_game_without_touching_the_running_one(self):
+        self.call(["1145360"], "Hades", 1, 1.0, True, appid=1809540, game_name="Nine Sols")
+        state = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))
+        self.assertEqual((state["error"], state["game"]["name"]), ("", "Nine Sols"))
+        with open(self.plugin.config_path, "rb") as f:
+            self.assertEqual(tomllib.load(f)["profile"], [lsfg_config.PLACEHOLDER])
+        self.assertFalse(any(e["name"] == lsfg_config.PLACEHOLDER["name"] for e in state["games"]))
+        bad = asyncio.run(self.plugin.remove_profile("1145360", 0, ""))
+        self.assertEqual(bad["error"], "Invalid settings were rejected.")
 
     def test_library_has_every_game_with_its_settings_and_unmatched_profiles(self):
         data = {"version": 2, "global": {}, "profile": [

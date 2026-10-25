@@ -2,7 +2,7 @@
 # off_start.sh <appid> <name>: start a game whose profile is Off, then turn it on live; prints lsfg-vk's log.
 set -u
 appid=$1 name=$2 D=$(dirname "$0")
-stop() { pkill -f "reaper SteamLaunch AppId=$appid( |$)"; sleep 8; }
+stop() { bash "$D/stop_game.sh" "$appid"; sleep 3; }
 call() { bash "$D/lscall.sh" set_profile "[\"$appid\"]" "\"$name\"" "$1" 1.0 true "$2" >/dev/null; }
 stop
 call 1 0

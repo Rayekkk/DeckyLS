@@ -48,6 +48,10 @@ def _ids(appid, exe):
     return ids
 
 
+def _valid_ids(ids):
+    return isinstance(ids, list) and 1 <= len(ids) <= 8 and all(isinstance(i, str) and 0 < len(i) <= 128 for i in ids)
+
+
 def _view(profile):
     return {k: profile.get(k, v) for k, v in DEFAULTS.items()} | {"name": profile.get("name", ""),
                                                                     "ids": lsfg_config.profile_ids(profile)}
@@ -66,7 +70,7 @@ def _library(games, data):
                         "settings": _view(profile) if profile else None})
     for profile in data["profile"] if data else ():
         ids = lsfg_config.profile_ids(profile)
-        if ids and id(profile) not in matched:
+        if ids and id(profile) not in matched and not lsfg_config.is_placeholder(profile):
             entries.append({"appid": 0, "name": str(profile.get("name") or ids[0]), "ids": ids,
                             "settings": _view(profile)})
     return entries
@@ -119,28 +123,41 @@ class Plugin:
             }
         return state
 
-    async def set_profile(self, ids: list, name: str, multiplier: int, flow_scale: float, performance_mode: bool,
-                          appid: int = 0) -> dict:
-        """Create or change the profile matching ids; returns the new state for the running game appid."""
-        if (not isinstance(ids, list) or not 1 <= len(ids) <= 8
-                or not all(isinstance(i, str) and 0 < len(i) <= 128 for i in ids)
-                or not isinstance(name, str) or type(multiplier) is not int or multiplier not in MULTIPLIERS
-                or type(flow_scale) not in (int, float) or not math.isfinite(flow_scale)
-                or not 0.25 <= flow_scale <= 1.0 or not isinstance(performance_mode, bool)):
-            self.error = "Invalid settings were rejected."
-            return await self.get_state(appid, name)
+    async def _change(self, change, what, appid, game_name):
+        """Apply change(data) to the config file; returns the state for the running game (appid, game_name)."""
         async with self.lock:
             try:
                 data = lsfg_config.load(self.config_path)
-                lsfg_config.set_profile(data, name.strip()[:128] or ids[0], ids, multiplier,
-                                        round(float(flow_scale), 2), performance_mode)
+                change(data)
                 await asyncio.to_thread(lsfg_config.save, self.config_path, data)
                 self.error = ""
-                decky.logger.info(f"profile {ids}: x{multiplier} flow {flow_scale} performance {performance_mode}")
+                decky.logger.info(what)
             except (lsfg_config.ConfigError, OSError) as e:
                 self.error = str(e)
                 decky.logger.error(f"saving the lsfg-vk config failed: {e}")
-        return await self.get_state(appid, name)
+        return await self.get_state(appid, game_name)
+
+    async def set_profile(self, ids: list, name: str, multiplier: int, flow_scale: float, performance_mode: bool,
+                          appid: int = 0, game_name: str = "") -> dict:
+        """Create or change the profile matching ids."""
+        if (not _valid_ids(ids) or not isinstance(name, str)
+                or type(multiplier) is not int or multiplier not in MULTIPLIERS
+                or type(flow_scale) not in (int, float) or not math.isfinite(flow_scale)
+                or not 0.25 <= flow_scale <= 1.0 or not isinstance(performance_mode, bool)):
+            self.error = "Invalid settings were rejected."
+            return await self.get_state(appid, game_name)
+        return await self._change(
+            lambda data: lsfg_config.set_profile(data, name.strip()[:128] or ids[0], ids, multiplier,
+                                                 round(float(flow_scale), 2), performance_mode),
+            f"profile {ids}: x{multiplier} flow {flow_scale} performance {performance_mode}", appid, game_name)
+
+    async def remove_profile(self, ids: list, appid: int = 0, game_name: str = "") -> dict:
+        """Keep lsfg-vk out of the game matching ids (the list's switch turned off)."""
+        if not _valid_ids(ids):
+            self.error = "Invalid settings were rejected."
+            return await self.get_state(appid, game_name)
+        return await self._change(lambda data: lsfg_config.remove_ids(data, ids), f"profile {ids}: removed",
+                                  appid, game_name)
 
     async def install_lsfg(self, appid: int = 0, name: str = "") -> dict:
         async with self.lock:

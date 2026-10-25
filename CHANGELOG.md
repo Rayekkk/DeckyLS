@@ -2,6 +2,20 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.3.0] - 2026-10-25
+
+### Changed
+
+- **Games** is folded away until you press **Show games**, and each game has an **On / Off** switch
+  instead of a multiplier. On makes lsfg-vk ready in the game (frame generation stays at 1×); once it
+  runs, choose 2×, 3× or 4× at the top of the panel and it applies live. Off keeps lsfg-vk out of the
+  game completely.
+
+### Fixed
+
+- Changing a game in the list no longer shows that game's name over the running game for a moment.
+- A switch flipped while a slider was still saving is no longer lost.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

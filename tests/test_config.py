@@ -66,6 +66,20 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(p["active_in"], ["GenshinImpact.exe", "vkcube", "123"])
         self.assertEqual((p["multiplier"], p["pacing_mode"]), (1, "none"))
 
+    def test_turning_a_game_off_removes_only_its_ids_and_never_leaves_the_file_without_profiles(self):
+        self.write(USER_FILE)
+        data = c.load(self.path)
+        c.set_profile(data, "Nine Sols", ["1809540"], 1, 1.0, True)
+        c.remove_ids(data, ["vkcube"])
+        self.assertEqual(data["profile"][0]["active_in"], "GenshinImpact.exe", "the shared profile keeps its other game")
+        c.remove_ids(data, ["GenshinImpact.exe", "1809540"])
+        self.assertEqual(data["profile"], [c.PLACEHOLDER])
+        c.save(self.path, data)
+        self.assertTrue(c.is_placeholder(c.load(self.path)["profile"][0]))
+        data = c.load(self.path)
+        c.set_profile(data, "Hades", ["1145360"], 1, 1.0, True)
+        self.assertEqual([p["name"] for p in data["profile"]], ["Hades"], "the placeholder goes once a game is back")
+
     def test_unreadable_or_foreign_file_is_never_overwritten(self):
         for text in ("version = 2\n[global\n", "version = 1\n", "version = 2\nglobal = 3\n"):
             self.write(text)

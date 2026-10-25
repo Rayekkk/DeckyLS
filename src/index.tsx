@@ -34,7 +34,8 @@ interface State {
 
 type GameArgs = [appid: number, name: string];
 const getState = callable<GameArgs, State>("get_state");
-const setProfile = callable<[string[], string, number, number, boolean, number], State>("set_profile");
+const setProfile = callable<[string[], string, number, number, boolean, ...GameArgs], State>("set_profile");
+const removeProfile = callable<[string[], ...GameArgs], State>("remove_profile");
 const installLsfg = callable<GameArgs, State>("install_lsfg");
 const removeLsfg = callable<GameArgs, State>("remove_lsfg");
 
@@ -70,27 +71,31 @@ function status(game: NonNullable<State["game"]>): string {
   return "Restart the game to start frame generation. lsfg-vk joins a game when it starts; OpenGL games are not supported.";
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
+// One pending save per game, so a slider still settling never swallows a switch flipped on another game.
+const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 const Content: FC = () => {
   const [state, setState] = useState<State | null>(null);
-  const [draft, setDraft] = useState<Record<string, Settings>>({});
+  // Unsaved changes per game (ids joined), shown at once; null = the game's switch was turned off.
+  const [draft, setDraft] = useState<Record<string, Settings | null>>({});
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [showGames, setShowGames] = useState(false);
 
   const refresh = useCallback(() => getState(...runningGame()).then(setState, () => {}), []);
   useEffect(() => {
     refresh();
     const timer = setInterval(refresh, REFRESH_MS);
-    return () => { clearInterval(timer); if (saveTimer) clearTimeout(saveTimer); };
+    return () => { clearInterval(timer); Object.values(saveTimers).forEach(clearTimeout); };
   }, [refresh]);
 
-  const save = useCallback((profile: { name: string; ids: string[] }, next: Settings, delay = 0) => {
+  const save = useCallback((profile: { name: string; ids: string[] }, next: Settings | null, delay = 0) => {
     const key = profile.ids.join("\n");
     setDraft(d => ({ ...d, [key]: next }));
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      saveTimer = undefined;
-      setProfile(profile.ids, profile.name, next.multiplier, next.flow_scale, next.performance_mode, runningGame()[0])
+    clearTimeout(saveTimers[key]);
+    saveTimers[key] = setTimeout(() => {
+      delete saveTimers[key];
+      (next ? setProfile(profile.ids, profile.name, next.multiplier, next.flow_scale, next.performance_mode, ...runningGame())
+        : removeProfile(profile.ids, ...runningGame()))
         .then(s => { setState(s); setDraft(d => { const { [key]: _, ...rest } = d; return rest; }); }, () => {});
     }, delay);
   }, []);
@@ -173,17 +178,20 @@ const Content: FC = () => {
       {others.length > 0 && (
         <PanelSection title="Games">
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "var(--gpSystemLighterGrey, #b8bcbf)" }}>
-              Set a game up before you start it and frame generation runs from its first frame.
-            </div>
+            <ButtonItem layout="below" onClick={() => setShowGames(v => !v)}
+              description={showGames ? undefined
+                : "Turn a game on before you start it; while it runs, choose 2×, 3× or 4× above."}>
+              {showGames ? "Hide games" : `Show games (${others.filter(e => e.settings).length} on)`}
+            </ButtonItem>
           </PanelSectionRow>
-          {others.map(e => {
-            const s = draft[e.ids.join("\n")] ?? e.settings ?? { ...DEFAULTS, multiplier: 1 };
+          {showGames && others.map(e => {
+            const key = e.ids.join("\n");
+            const s = key in draft ? draft[key] : e.settings;
             return (
-              <PanelSectionRow key={e.ids.join("\n")}>
-                <DropdownItem label={e.name || e.ids[0]} disabled={!installed || !!state.config_error}
-                  rgOptions={MULTIPLIERS} selectedOption={s.multiplier}
-                  onChange={o => save({ name: e.name || e.ids[0], ids: e.ids }, { ...s, multiplier: o.data })} />
+              <PanelSectionRow key={key}>
+                <ToggleField label={e.name || e.ids[0]} disabled={!installed || !!state.config_error} checked={!!s}
+                  description={s && s.multiplier > 1 ? `${s.multiplier}× frame generation` : s ? "Ready" : undefined}
+                  onChange={on => save({ name: e.name || e.ids[0], ids: e.ids }, on ? { ...DEFAULTS, multiplier: 1 } : null)} />
               </PanelSectionRow>
             );
           })}

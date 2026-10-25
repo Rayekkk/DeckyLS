@@ -80,7 +80,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.equal(find(tree, 'DropdownItem', 'Frame generation').props.selectedOption, 2, 'shown before the backend answers');
     h.fire();
     const saved = h.calls.find(c => c.name === 'set_profile');
-    assert.deepEqual(saved.args, [['1809540'], 'Nine Sols', 2, 1, true, 1809540]);
+    assert.deepEqual(saved.args, [['1809540'], 'Nine Sols', 2, 1, true, 1809540, 'Nine Sols']);
     h.respond('set_profile', game({ name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true }));
     await settle();
     tree = h.render();
@@ -101,11 +101,11 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.fire();
     const saves = h.calls.filter(c => c.name === 'set_profile');
     assert.equal(saves.length, 1);
-    assert.deepEqual(saves[0].args, [['1809540'], 'Nine Sols', 3, 0.85, true, 1809540]);
+    assert.deepEqual(saves[0].args, [['1809540'], 'Nine Sols', 3, 0.85, true, 1809540, 'Nine Sols']);
   }
 
-  // Games list: every game can be set up before it starts, in the backend's order; the running game is not
-  // listed twice; a game set up before keeps its own tuning when only the multiplier changes.
+  // Games list: collapsed at first; expanded it is alphabetical without the running game. A switch turned on
+  // prepares the game at 1× (the multiplier is chosen in the game), turned off it removes the game's profile.
   {
     const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
@@ -116,21 +116,28 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
       { appid: 1809540, name: 'Nine Sols', ids: ['1809540'], settings: null },
       { appid: 3, name: 'Ärger 10', ids: ['3'], settings: null },
       { appid: 4, name: 'Ärger 9', ids: ['4'], settings: null },
-      { appid: 0, name: 'genshin', ids: ['GenshinImpact.exe'], settings: { ...tuned, name: 'genshin', ids: ['GenshinImpact.exe'] } }] };
+      { appid: 0, name: 'genshin', ids: ['GenshinImpact.exe'], settings: { ...tuned, multiplier: 1, name: 'genshin', ids: ['GenshinImpact.exe'] } }] };
     h.respond('get_state', listed);
     await settle();
     let tree = h.render();
-    const rows = all(tree).filter(n => n.type === 'DropdownItem').map(n => n.props.label);
-    assert.deepEqual(rows, ['Frame generation', 'Ärger 9', 'Ärger 10', 'genshin', 'Hades', 'Shortcut'], 'alphabetical, running game on top only');
-    assert.equal(find(tree, 'DropdownItem', 'Shortcut').props.selectedOption, 1, 'never set up shows Off');
-    find(tree, 'DropdownItem', 'Shortcut').props.onChange({ data: 2 });
+    const toggles = t => all(t).filter(n => n.type === 'ToggleField').map(n => n.props.label);
+    const expand = all(tree).find(n => n.type === 'ButtonItem' && String(n.props.children).startsWith('Show games'));
+    assert.equal(expand.props.children, 'Show games (2 on)');
+    assert.deepEqual(toggles(tree), [], 'collapsed by default');
+    expand.props.onClick();
+    tree = h.render();
+    assert.deepEqual(toggles(tree), ['Ärger 9', 'Ärger 10', 'genshin', 'Hades', 'Shortcut'], 'alphabetical, running game on top only');
+    assert.equal(find(tree, 'ToggleField', 'Hades').props.description, '3× frame generation');
+    assert.equal(find(tree, 'ToggleField', 'genshin').props.description, 'Ready');
+    assert.equal(find(tree, 'ToggleField', 'Shortcut').props.checked, false);
+    find(tree, 'ToggleField', 'Shortcut').props.onChange(true);
+    assert.equal(find(h.render(), 'ToggleField', 'Shortcut').props.checked, true, 'shown before the backend answers');
+    find(h.render(), 'ToggleField', 'Hades').props.onChange(false);
     h.fire();
-    assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args, [['2147483649', 'Game.exe'], 'Shortcut', 2, 1, true, 1809540]);
-    h.respond('set_profile', listed);
-    await settle();
-    find(h.render(), 'DropdownItem', 'Hades').props.onChange({ data: 1 });
-    h.fire();
-    assert.deepEqual(h.calls.filter(c => c.name === 'set_profile')[1].args, [['1145360'], 'Hades', 1, 0.7, false, 1809540]);
+    assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args,
+      [['2147483649', 'Game.exe'], 'Shortcut', 1, 1, true, 1809540, 'Nine Sols'], 'both switches saved, neither swallowed');
+    assert.deepEqual(h.calls.find(c => c.name === 'remove_profile').args, [['1145360'], 1809540, 'Nine Sols']);
+    assert.equal(find(h.render(), 'ToggleField', 'Hades').props.checked, false);
   }
 
   // No game: a hint, the games list, and the install button when lsfg-vk is missing.
@@ -141,9 +148,11 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.respond('get_state', { ...base, lsfg: null, managed: false, lossless_scaling: { installed: true, dll: '' },
       games: [{ appid: 0, name: 'Genshin', ids: ['GenshinImpact.exe'], settings: null }] });
     await settle();
-    const tree = h.render();
+    let tree = h.render();
     assert.ok(find(tree, 'Field', 'No game running'));
-    assert.equal(find(tree, 'DropdownItem', 'Genshin').props.disabled, true, 'nothing to change until lsfg-vk is installed');
+    all(tree).find(n => n.type === 'ButtonItem' && String(n.props.children).startsWith('Show games')).props.onClick();
+    tree = h.render();
+    assert.equal(find(tree, 'ToggleField', 'Genshin').props.disabled, true, 'nothing to change until lsfg-vk is installed');
     const install = all(tree).find(n => n.type === 'ButtonItem');
     assert.equal(install.props.children, 'Install lsfg-vk 2.0.0');
     assert.ok(all(tree).some(n => n.type?.name === 'Note' && String(n.props.children).includes('Betas')), 'wrong Steam branch is explained');

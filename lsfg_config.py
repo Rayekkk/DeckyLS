@@ -17,6 +17,8 @@ import tomllib
 
 VERSION = 2
 BACKUP_SUFFIX = ".bak-deckyls"
+# lsfg-vk rejects a file without profiles; this one stands in for the last removed game and matches nothing.
+PLACEHOLDER = {"name": "DeckyLS: no game", "active_in": "deckyls-no-game", "multiplier": 1}
 _BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 
 
@@ -61,7 +63,27 @@ def find(data, ids):
     return next((p for p in data["profile"] if wanted & set(profile_ids(p))), None)
 
 
+def is_placeholder(profile):
+    return profile_ids(profile) == [PLACEHOLDER["active_in"]]
+
+
+def remove_ids(data, ids):
+    """Take ids out of every profile, so lsfg-vk stays out of that game; a profile left without ids goes."""
+    wanted = set(ids)
+    kept = []
+    for profile in data["profile"]:
+        known = profile_ids(profile)
+        rest = [i for i in known if i not in wanted]
+        if len(rest) == len(known):
+            kept.append(profile)
+        elif rest:
+            profile["active_in"] = rest[0] if len(rest) == 1 else rest
+            kept.append(profile)
+    data["profile"] = kept or [dict(PLACEHOLDER)]
+
+
 def set_profile(data, name, ids, multiplier, flow_scale, performance_mode):
+    data["profile"] = [p for p in data["profile"] if not is_placeholder(p)]
     profile = find(data, ids)
     if profile is None:
         profile = {"name": name, "active_in": ids[0] if len(ids) == 1 else list(ids)}
