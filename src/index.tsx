@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Rayekkk
 
-import { callable, definePlugin } from "@decky/api";
+import { callable, definePlugin, routerHook } from "@decky/api";
 import {
   ButtonItem, DropdownItem, Field, PanelSection, PanelSectionRow, Router, SliderField, Spinner, staticClasses,
   ToggleField,
@@ -29,6 +29,7 @@ interface State {
   rivals: string[];
   config_error: string;
   allow_fp16: boolean;
+  fps_counter: boolean;
   games: Entry[];
   game: {
     appid: number; name: string; ids: string[]; running: boolean;
@@ -42,6 +43,8 @@ const getState = callable<GameArgs, State>("get_state");
 const setProfile = callable<[string[], string, Settings, ...GameArgs], State>("set_profile");
 const removeProfile = callable<[string[], ...GameArgs], State>("remove_profile");
 const setFp16 = callable<[boolean, ...GameArgs], State>("set_fp16");
+const setFpsCounter = callable<[boolean, ...GameArgs], State>("set_fps_counter");
+const getFps = callable<[number], { fps: number | null; multiplier: number }>("get_fps");
 const installLsfg = callable<GameArgs, State>("install_lsfg");
 const removeLsfg = callable<GameArgs, State>("remove_lsfg");
 
@@ -247,6 +250,11 @@ const Content: FC = () => {
             description="Faster on AMD graphics, such as the Steam Deck, Legion Go and ROG Ally, with the same image. Turn off only on an old NVIDIA GTX 10 card. Applies the next time a game starts."
             onChange={v => run((...g) => setFp16(v, ...g))} />
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField label="FPS counter" checked={state.fps_counter}
+            description="Shows the game's own frame rate and what you see with frame generation, for example 48 / 144 FPS, in the top-left corner while you play."
+            onChange={v => run((...g) => setFpsCounter(v, ...g))} />
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title="About">
@@ -279,6 +287,34 @@ const Content: FC = () => {
   );
 };
 
+// "base / shown FPS" while frame generation runs, "shown FPS" without it; "" hides the counter.
+const fpsLabel =(fps: number | null, multiplier: number) => fps === null ? ""
+  : multiplier > 1 ? `${Math.round(fps / multiplier)} / ${Math.round(fps)} FPS` : `${Math.round(fps)} FPS`;
+
+// Drawn in the Steam UI layer gamescope puts over games, like Steam's notifications; it never takes input.
+const FpsCounter: FC = () => {
+  const [label, setLabel] = useState("");
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      const app = Router.MainRunningApp;
+      if (!app) return setLabel("");  // without a game, gamescope reports Steam's own frame rate
+      getFps(Number(app.appid)).then(r => { if (alive) setLabel(fpsLabel(r.fps, r.multiplier)); }, () => {});
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+  if (!label) return null;
+  return (
+    <div style={{
+      position: "fixed", top: "8px", left: "8px", zIndex: 7000, pointerEvents: "none",
+      padding: "3px 8px", borderRadius: "6px", background: "rgba(0, 0, 0, 0.55)", color: "#fff",
+      font: "600 15px/1.3 'Motiva Sans', sans-serif", fontVariantNumeric: "tabular-nums",
+    }}>{label}</div>
+  );
+};
+
 const LsIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
     strokeLinecap="round" strokeLinejoin="round" style={{ width: "1em", height: "1em" }}>
@@ -288,9 +324,17 @@ const LsIcon = () => (
   </svg>
 );
 
-export default definePlugin(() => ({
-  name: "DeckyLS",
-  titleView: <div className={staticClasses.Title}>DeckyLS</div>,
-  content: <Content />,
-  icon: <LsIcon />,
-}));
+const FPS_COMPONENT = "DeckyLS FPS counter";
+
+export default definePlugin(() => {
+  routerHook.addGlobalComponent(FPS_COMPONENT, FpsCounter);
+  return {
+    name: "DeckyLS",
+    titleView: <div className={staticClasses.Title}>DeckyLS</div>,
+    content: <Content />,
+    icon: <LsIcon />,
+    onDismount() {
+      routerHook.removeGlobalComponent(FPS_COMPONENT);
+    },
+  };
+});

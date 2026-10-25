@@ -28,6 +28,7 @@ for the running game and tells you whether frame generation really runs.
 |---|---|
 | **One-tap setup** | Installs the official lsfg-vk 2.0.0 from its author's site and checks it against a pinned hash |
 | **One menu** | Frame generation **Off / 2× – 8×**, flow scale and performance mode for the game you are playing |
+| **FPS counter** | The game's own frame rate and what you see, for example **48 / 144 FPS**, in the top-left corner |
 | **Compatibility options** | Folded away until a game needs them: **Force V-Sync** and **Keep the game's buffer count**, plus a global **Half precision (FP16)** switch |
 | **All your games** | Every installed game in alphabetical order, Steam and non-Steam, with an On / Off switch to prepare it before you start it |
 | **Live changes** | Every change reaches the running game within a second |
@@ -96,6 +97,11 @@ and was never turned on in the list, restart it once.
 | lsfg-vk uses the profile "…" for this game | Another profile matches the game first (for example one made by another tool); change that one under **Games** |
 | Off | Frame generation is off for this game; choose 2×, 3× or 4× to start it |
 
+**FPS counter:** turn on **All games → FPS counter** to see, in the top-left corner, the game's own
+frame rate and the rate on screen, for example **48 / 144 FPS** at 3×. The screen cannot show more than
+its refresh rate, so a game at 60 fps set to 3× on a 144 Hz screen slows down to 48; the counter makes that
+visible. Steam's own performance overlay counts the frames on screen only.
+
 **Tips:** frame generation needs a steady base frame rate; cap the game a little below what it
 reaches (for example 40 fps for 80 fps at 2×). Lower **Flow scale** costs less GPU time, higher
 follows fast motion better. **Performance mode** uses a lighter model that suits handheld GPUs.
@@ -154,6 +160,12 @@ original file is copied once to `conf.toml.bak-deckyls`.
 lsfg-vk logs through the Steam client into the user journal. The **Status** line reads the profile
 lsfg-vk picked since the game started (`journalctl --user`) and compares it with the game's
 profile.
+
+The **FPS counter** reads gamescope's stats pipe (`/run/user/<uid>/gamescope.*/stats.pipe`), which reports
+the rate of the frames the game hands gamescope, generated ones included; nothing else on SteamOS reads it,
+and DeckyLS reads it only while the counter is on. The game's own rate is that divided by the multiplier,
+shown only once lsfg-vk's log says it joined the game. The label is drawn in the Steam UI layer that
+gamescope puts over games (where Steam's notifications appear) and ignores touch and clicks.
 
 lsfg-vk is not part of the plugin. It is licensed CC BY-NC-ND 4.0, so DeckyLS never changes or
 ships it: **Install lsfg-vk** downloads the author's release archive from `builds.lsfg-vk.dev`,

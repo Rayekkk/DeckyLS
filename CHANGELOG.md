@@ -2,6 +2,15 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.5.0] - 2026-10-25
+
+### Added
+
+- **All games → FPS counter**: the game's own frame rate and what you see with frame generation, for
+  example **48 / 144 FPS**, in the top-left corner while you play. Without frame generation it shows the
+  one rate. It reads the frame rate gamescope reports for the screen and shows a base rate only once
+  lsfg-vk has really joined the game. It never takes touch or controller input.
+
 ## [0.4.0] - 2026-10-25
 
 ### Added

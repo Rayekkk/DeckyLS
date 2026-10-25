@@ -12,6 +12,7 @@ import json
 import math
 import os
 import sys
+import time
 
 import decky
 
@@ -20,6 +21,7 @@ if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
 import lsfg_config  # noqa: E402
+import lsfg_fps  # noqa: E402
 import lsfg_games  # noqa: E402
 import lsfg_install  # noqa: E402
 import lsfg_status  # noqa: E402
@@ -99,6 +101,17 @@ class Plugin:
         self.lock = asyncio.Lock()
         self.busy = ""
         self.error = ""
+        self.settings_path = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "settings.json")
+        try:
+            with open(self.settings_path, encoding="utf-8") as f:
+                saved = json.load(f)
+        except (OSError, ValueError):
+            saved = {}
+        self.fps_counter = isinstance(saved, dict) and saved.get("fps_counter") is True
+        self.fps = lsfg_fps.Reader(lsfg_fps.pipe_pattern() if hasattr(os, "getuid") else "")
+        self.live = {}  # appid -> what the FPS counter knows about that game's session
+        if self.fps_counter:
+            self.fps.start()
 
     async def get_state(self, appid: int = 0, name: str = "") -> dict:
         home = _home()
@@ -114,6 +127,7 @@ class Plugin:
             "lossless_scaling": lsfg_status.lossless_scaling(home),
             "rivals": lsfg_status.rival_plugins(PLUGIN_DIR),
             "config_error": "",
+            "fps_counter": self.fps_counter,
             "games": [],
             "game": None,
         }
@@ -171,6 +185,50 @@ class Plugin:
         return await self._change(lambda data: data["global"].update(allow_fp16=allowed),
                                   f"allow_fp16 = {allowed}", appid, game_name)
 
+    async def set_fps_counter(self, enabled: bool, appid: int = 0, game_name: str = "") -> dict:
+        if type(enabled) is not bool:
+            self.error = "Invalid settings were rejected."
+            return await self.get_state(appid, game_name)
+        tmp = self.settings_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"fps_counter": enabled}, f)
+        os.replace(tmp, self.settings_path)
+        self.fps_counter = enabled
+        if enabled:
+            self.fps.start()
+        else:
+            self.fps.stop()
+        return await self.get_state(appid, game_name)
+
+    async def get_fps(self, appid: int = 0) -> dict:
+        """For the FPS counter: the rate on screen and the multiplier really running in the game (1 = none)."""
+        fps = self.fps.current() if self.fps_counter else None
+        return {"fps": fps, "multiplier": await self._live_multiplier(appid) if fps else 1}
+
+    async def _live_multiplier(self, appid):
+        if type(appid) is not int or appid <= 0:
+            return 1
+        # lsfg-vk joins a game only when it starts; until its log says it did, the file's multiplier is not on
+        # screen. The journal is read once per game, and again every few seconds while lsfg-vk has not joined.
+        now = time.monotonic()
+        known = self.live.get(appid)
+        if known is None or (known["attached"] is None and now - known["checked"] > 5):
+            running = await asyncio.to_thread(lsfg_status.find_game, appid)
+            attached = None
+            if running and running["started"]:
+                attached = lsfg_status.attached_profile(
+                    await asyncio.to_thread(lsfg_status.journal_since, running["started"]))
+            known = {"ids": _ids(appid, running["exe"] if running else ""), "attached": attached, "checked": now}
+            self.live = {appid: known}
+        if known["attached"] is None:
+            return 1
+        try:
+            profile = lsfg_config.find(lsfg_config.load(self.config_path), known["ids"])
+        except lsfg_config.ConfigError:
+            return 1
+        multiplier = profile.get("multiplier", LSFG_DEFAULTS["multiplier"]) if profile else 1
+        return multiplier if type(multiplier) is int and multiplier >= 1 else 1
+
     async def remove_profile(self, ids: list, appid: int = 0, game_name: str = "") -> dict:
         """Keep lsfg-vk out of the game matching ids (the list's switch turned off)."""
         if not _valid_ids(ids):
@@ -212,7 +270,7 @@ class Plugin:
         return await self.get_state(appid, name)
 
     async def _unload(self):
-        pass
+        self.fps.stop()
 
     async def _uninstall(self):
         # Decky runs this on every plugin update too (uninstall + install), so lsfg-vk stays; "Remove lsfg-vk"

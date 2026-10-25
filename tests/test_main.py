@@ -60,6 +60,32 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.saved()["global"], {"allow_fp16": False})
         self.assertEqual(self.saved()["profile"][0]["name"], "x")
 
+    def test_fps_counter_switch_is_remembered_and_shows_nothing_while_off(self):
+        self.assertFalse(asyncio.run(self.plugin.get_state())["fps_counter"])
+        self.plugin.fps.fps, self.plugin.fps.at = 120.0, main.time.monotonic()
+        self.assertEqual(asyncio.run(self.plugin.get_fps(1809540)), {"fps": None, "multiplier": 1})
+        try:
+            self.assertTrue(asyncio.run(self.plugin.set_fps_counter(True))["fps_counter"])
+            self.plugin.fps.fps, self.plugin.fps.at = 120.0, main.time.monotonic()
+            # lsfg-vk has not joined this game (no such process here), so no base rate is claimed.
+            self.assertEqual(asyncio.run(self.plugin.get_fps(1809540)), {"fps": 120.0, "multiplier": 1})
+            again = main.Plugin()
+            asyncio.run(again._main())
+            self.assertTrue(again.fps_counter, "the switch survives a restart")
+            again.fps.stop()
+            self.assertEqual(asyncio.run(self.plugin.set_fps_counter("on"))["error"], "Invalid settings were rejected.")
+        finally:
+            asyncio.run(self.plugin.set_fps_counter(False))
+
+    def test_counter_uses_the_multiplier_of_the_profile_lsfg_vk_joined(self):
+        self.call(["1809540"], "Nine Sols", settings(multiplier=3))
+        self.plugin.live = {1809540: {"ids": ["1809540"], "attached": ("Nine Sols", "Steam App ID"),
+                                      "checked": main.time.monotonic()}}
+        self.assertEqual(asyncio.run(self.plugin._live_multiplier(1809540)), 3)
+        self.call(["1809540"], "Nine Sols", settings(multiplier=1))
+        self.assertEqual(asyncio.run(self.plugin._live_multiplier(1809540)), 1)
+        self.assertEqual(asyncio.run(self.plugin._live_multiplier(0)), 1)
+
     def test_list_switch_prepares_and_removes_a_game_without_touching_the_running_one(self):
         self.call(["1145360"], "Hades", settings(multiplier=1), appid=1809540, game_name="Nine Sols")
         state = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))

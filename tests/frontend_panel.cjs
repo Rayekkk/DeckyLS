@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..'), ts = require(path.join(root, 'node_m
 const settle = async () => { for (let i = 0; i < 24; i++) await Promise.resolve(); };
 
 function harness(runningApp) {
-  const slots = [], effects = new Map(), pending = [], calls = [], timers = [];
+  const slots = [], effects = new Map(), pending = [], calls = [], timers = [], globals = {};
   let cursor = 0;
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => v === b[i]);
   const hooks = {
@@ -23,7 +23,7 @@ function harness(runningApp) {
   const callable = name => (...args) => new Promise((resolve, reject) =>
     calls.push({ name, args: JSON.parse(JSON.stringify(args)), resolve, reject, settled: false }));
   const ui = new Proxy({ Router: { get MainRunningApp() { return runningApp; } } }, { get: (o, k) => (k in o ? o[k] : k) });
-  const source = fs.readFileSync(path.join(root, 'src', 'index.tsx'), 'utf8') + '\nexport { Content };';
+  const source = fs.readFileSync(path.join(root, 'src', 'index.tsx'), 'utf8') + '\nexport { Content, FpsCounter, fpsLabel };';
   const output = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const mod = { exports: {} };
@@ -34,14 +34,17 @@ function harness(runningApp) {
     require(name) {
       if (name === 'react') return hooks;
       if (name === 'react/jsx-runtime') return jsx;
-      if (name === '@decky/api') return { callable, definePlugin: fn => fn };
+      if (name === '@decky/api') return { callable, definePlugin: fn => fn, routerHook: {
+        addGlobalComponent: (n, c) => { globals[n] = c; }, removeGlobalComponent: n => { delete globals[n]; } } };
       if (name === '@decky/ui') return ui;
       throw Error(name);
     },
   });
-  const render = () => { cursor = 0; const tree = mod.exports.Content({}); pending.splice(0).forEach(fn => fn()); return tree; };
+  const render = (component = 'Content') => {
+    cursor = 0; const tree = mod.exports[component]({}); pending.splice(0).forEach(fn => fn()); return tree;
+  };
   return {
-    render, calls, timers,
+    render, calls, timers, globals, mod,
     respond(name, value) {
       const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
       call.settled = true; call.resolve(value); return call;
@@ -146,7 +149,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.respond('get_state', listed);
     await settle();
     let tree = h.render();
-    const toggles = t => all(t).filter(n => n.type === 'ToggleField' && n.props.label !== 'Half precision (FP16)').map(n => n.props.label);
+    const toggles = t => all(t).filter(n => n.type === 'ToggleField' && !['Half precision (FP16)', 'FPS counter'].includes(n.props.label)).map(n => n.props.label);
     const expand = all(tree).find(n => n.type === 'ButtonItem' && String(n.props.children).startsWith('Show games'));
     assert.equal(expand.props.children, 'Show games (2 on)');
     assert.deepEqual(toggles(tree), [], 'collapsed by default');
@@ -184,6 +187,37 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.ok(all(tree).some(n => n.type?.name === 'Note' && String(n.props.children).includes('Betas')), 'wrong Steam branch is explained');
     install.props.onClick();
     assert.ok(h.calls.some(c => c.name === 'install_lsfg'));
+  }
+
+  // FPS counter: registered as a global component and removed with the plugin; it asks the backend only while a
+  // game runs, shows base / shown FPS while frame generation runs, the shown rate alone without it, and nothing
+  // when there is no reading. The switch lives under All games.
+  {
+    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const plugin = h.mod.exports.default();
+    assert.ok(h.globals['DeckyLS FPS counter']);
+    plugin.onDismount();
+    assert.deepEqual(Object.keys(h.globals), []);
+    const { fpsLabel } = h.mod.exports;
+    assert.equal(fpsLabel(143.9, 3), '48 / 144 FPS');
+    assert.equal(fpsLabel(59.6, 1), '60 FPS');
+    assert.equal(fpsLabel(null, 3), '');
+    assert.equal(h.render('FpsCounter'), null, 'hidden until the first reading');
+    assert.deepEqual(h.calls.find(c => c.name === 'get_fps').args, [1809540]);
+    h.respond('get_fps', { fps: 120.2, multiplier: 2 });
+    await settle();
+    const label = h.render('FpsCounter');
+    assert.equal(label.props.children, '60 / 120 FPS');
+    assert.equal(label.props.style.pointerEvents, 'none', 'never takes touch or clicks from the game');
+    const idle = harness(undefined);
+    assert.equal(idle.render('FpsCounter'), null);
+    assert.ok(!idle.calls.some(c => c.name === 'get_fps'), 'no game: no reading, gamescope would report Steam itself');
+    const panel = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    panel.render();
+    panel.respond('get_state', { ...base, fps_counter: false });
+    await settle();
+    find(panel.render(), 'ToggleField', 'FPS counter').props.onChange(true);
+    assert.deepEqual(panel.calls.find(c => c.name === 'set_fps_counter').args, [true, 1809540, 'Nine Sols']);
   }
   console.log('frontend panel: ok');
 })().catch(e => { console.error(e); process.exit(1); });
