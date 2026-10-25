@@ -10,6 +10,8 @@ import { FC, useCallback, useEffect, useState } from "react";
 
 interface Settings { multiplier: number; flow_scale: number; performance_mode: boolean }
 interface Profile extends Settings { name: string; ids: string[] }
+// An installed game (appid 0: a profile that matches no installed game); settings null = never set up.
+interface Entry { appid: number; name: string; ids: string[]; settings: Profile | null }
 
 interface State {
   version: string;
@@ -22,7 +24,7 @@ interface State {
   lossless_scaling: { installed: boolean; dll: string };
   rivals: string[];
   config_error: string;
-  profiles: Profile[];
+  games: Entry[];
   game: {
     appid: number; name: string; ids: string[]; running: boolean;
     settings: Profile | null;
@@ -42,6 +44,8 @@ const MULTIPLIERS = [
 ];
 const SAVE_DELAY_MS = 400; // the slider reports every step; lsfg-vk reloads the game's config on every write
 const REFRESH_MS = 5000;
+// Alphabetical as people read it in the Steam client's language: case and accents do not split the list.
+const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 const runningGame = (): GameArgs => {
   const app = Router.MainRunningApp;
@@ -101,7 +105,8 @@ const Content: FC = () => {
   const installed = state.lsfg !== null;
   const ls = state.lossless_scaling;
   const game = state.game;
-  const others = state.profiles.filter(p => !game || !p.ids.some(i => game.ids.includes(i)));
+  const others = state.games.filter(e => !game || !e.ids.some(i => game.ids.includes(i)))
+    .sort((a, b) => byName.compare(a.name, b.name));
 
   return (
     <>
@@ -166,14 +171,19 @@ const Content: FC = () => {
       </PanelSection>
 
       {others.length > 0 && (
-        <PanelSection title="Other games">
-          {others.map(p => {
-            const s = draft[p.ids.join("\n")] ?? p;
+        <PanelSection title="Games">
+          <PanelSectionRow>
+            <div style={{ fontSize: "12px", color: "var(--gpSystemLighterGrey, #b8bcbf)" }}>
+              Set a game up before you start it and frame generation runs from its first frame.
+            </div>
+          </PanelSectionRow>
+          {others.map(e => {
+            const s = draft[e.ids.join("\n")] ?? e.settings ?? { ...DEFAULTS, multiplier: 1 };
             return (
-              <PanelSectionRow key={p.ids.join("\n")}>
-                <DropdownItem label={p.name || p.ids[0]} disabled={!installed || !!state.config_error}
+              <PanelSectionRow key={e.ids.join("\n")}>
+                <DropdownItem label={e.name || e.ids[0]} disabled={!installed || !!state.config_error}
                   rgOptions={MULTIPLIERS} selectedOption={s.multiplier}
-                  onChange={o => save(p, { ...s, multiplier: o.data })} />
+                  onChange={o => save({ name: e.name || e.ids[0], ids: e.ids }, { ...s, multiplier: o.data })} />
               </PanelSectionRow>
             );
           })}

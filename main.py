@@ -20,6 +20,7 @@ if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
 import lsfg_config  # noqa: E402
+import lsfg_games  # noqa: E402
 import lsfg_install  # noqa: E402
 import lsfg_status  # noqa: E402
 
@@ -52,6 +53,25 @@ def _view(profile):
                                                                     "ids": lsfg_config.profile_ids(profile)}
 
 
+def _library(games, data):
+    """Every installed game with its settings (None = never set up), plus profiles that match no installed game
+    (made by hand or by another tool), so they can be set up before they are started. The panel sorts them."""
+    entries, matched = [], set()
+    for game in games:
+        ids = _ids(game["appid"], game["exe"])
+        profile = lsfg_config.find(data, ids) if data else None
+        if profile is not None:
+            matched.add(id(profile))
+        entries.append({"appid": game["appid"], "name": game["name"], "ids": ids,
+                        "settings": _view(profile) if profile else None})
+    for profile in data["profile"] if data else ():
+        ids = lsfg_config.profile_ids(profile)
+        if ids and id(profile) not in matched:
+            entries.append({"appid": 0, "name": str(profile.get("name") or ids[0]), "ids": ids,
+                            "settings": _view(profile)})
+    return entries
+
+
 class Plugin:
     async def _main(self):
         os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
@@ -75,15 +95,15 @@ class Plugin:
             "lossless_scaling": lsfg_status.lossless_scaling(home),
             "rivals": lsfg_status.rival_plugins(PLUGIN_DIR),
             "config_error": "",
-            "profiles": [],
+            "games": [],
             "game": None,
         }
         try:
             data = lsfg_config.load(self.config_path)
-            state["profiles"] = [_view(p) for p in data["profile"]]
         except lsfg_config.ConfigError as e:
             state["config_error"] = str(e)
             data = None
+        state["games"] = _library(await asyncio.to_thread(lsfg_games.installed, home), data)
         if isinstance(appid, int) and appid > 0:
             running = await asyncio.to_thread(lsfg_status.find_game, appid)
             ids = _ids(appid, running["exe"] if running else "")

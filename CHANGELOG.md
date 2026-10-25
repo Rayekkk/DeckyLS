@@ -2,6 +2,15 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.2.0] - 2026-10-25
+
+### Added
+
+- **Games**: every installed game, in alphabetical order, with its own Off / 2× / 3× / 4× switch. Set a
+  game up before you start it and frame generation runs from its first frame, no restart needed.
+  Steam games on every drive and SD card are listed, and non-Steam games together with their
+  executable, so lsfg-vk recognises them too.
+
 ## [0.1.0] - 2026-10-25
 
 First version.

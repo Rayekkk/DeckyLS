@@ -58,7 +58,7 @@ const find = (tree, type, label) => all(tree).find(n => n.type === type && (labe
 const base = {
   version: '0.1.0', pinned: '2.0.0', lsfg: { ok: true, text: '', version: '2.0.0' }, managed: true,
   managed_version: '2.0.0', busy: '', error: '', lossless_scaling: { installed: true, dll: '/ls/lsfg-vk.dll' },
-  rivals: [], config_error: '', profiles: [], game: null,
+  rivals: [], config_error: '', games: [], game: null,
 };
 const game = (settings = null, attached = null) => ({ ...base, game: {
   appid: 1809540, name: 'Nine Sols', ids: ['1809540'], running: true, settings, attached } });
@@ -104,13 +104,42 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.deepEqual(saves[0].args, [['1809540'], 'Nine Sols', 3, 0.85, true, 1809540]);
   }
 
-  // No game: a hint, the other games' profiles, and the install button when lsfg-vk is missing.
+  // Games list: every game can be set up before it starts, in the backend's order; the running game is not
+  // listed twice; a game set up before keeps its own tuning when only the multiplier changes.
+  {
+    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    const tuned = { name: 'Hades', ids: ['1145360'], multiplier: 3, flow_scale: 0.7, performance_mode: false };
+    const listed = { ...game(), games: [
+      { appid: 2147483649, name: 'Shortcut', ids: ['2147483649', 'Game.exe'], settings: null },
+      { appid: 1145360, name: 'Hades', ids: ['1145360'], settings: tuned },
+      { appid: 1809540, name: 'Nine Sols', ids: ['1809540'], settings: null },
+      { appid: 3, name: 'Ärger 10', ids: ['3'], settings: null },
+      { appid: 4, name: 'Ärger 9', ids: ['4'], settings: null },
+      { appid: 0, name: 'genshin', ids: ['GenshinImpact.exe'], settings: { ...tuned, name: 'genshin', ids: ['GenshinImpact.exe'] } }] };
+    h.respond('get_state', listed);
+    await settle();
+    let tree = h.render();
+    const rows = all(tree).filter(n => n.type === 'DropdownItem').map(n => n.props.label);
+    assert.deepEqual(rows, ['Frame generation', 'Ärger 9', 'Ärger 10', 'genshin', 'Hades', 'Shortcut'], 'alphabetical, running game on top only');
+    assert.equal(find(tree, 'DropdownItem', 'Shortcut').props.selectedOption, 1, 'never set up shows Off');
+    find(tree, 'DropdownItem', 'Shortcut').props.onChange({ data: 2 });
+    h.fire();
+    assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args, [['2147483649', 'Game.exe'], 'Shortcut', 2, 1, true, 1809540]);
+    h.respond('set_profile', listed);
+    await settle();
+    find(h.render(), 'DropdownItem', 'Hades').props.onChange({ data: 1 });
+    h.fire();
+    assert.deepEqual(h.calls.filter(c => c.name === 'set_profile')[1].args, [['1145360'], 'Hades', 1, 0.7, false, 1809540]);
+  }
+
+  // No game: a hint, the games list, and the install button when lsfg-vk is missing.
   {
     const h = harness(undefined);
     h.render();
     assert.deepEqual(h.calls[0].args, [0, '']);
     h.respond('get_state', { ...base, lsfg: null, managed: false, lossless_scaling: { installed: true, dll: '' },
-      profiles: [{ name: 'Genshin', ids: ['GenshinImpact.exe'], multiplier: 2, flow_scale: 1, performance_mode: false }] });
+      games: [{ appid: 0, name: 'Genshin', ids: ['GenshinImpact.exe'], settings: null }] });
     await settle();
     const tree = h.render();
     assert.ok(find(tree, 'Field', 'No game running'));

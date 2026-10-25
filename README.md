@@ -28,6 +28,7 @@ for the running game and tells you whether frame generation really runs.
 |---|---|
 | **One-tap setup** | Installs the official lsfg-vk 2.0.0 from its author's site and checks it against a pinned hash |
 | **One menu** | Frame generation **Off / 2× / 3× / 4×**, flow scale and performance mode for the game you are playing |
+| **All your games** | Every installed game in alphabetical order, Steam and non-Steam, ready to set up before you start it |
 | **Live changes** | Every change reaches the running game within a second |
 | **No launch options** | Your games' launch options stay untouched, so other launch-option tools keep working |
 | **Honest status** | Shows whether lsfg-vk joined the game and how it found it, lsfg-vk's own health check, a missing Lossless Scaling or the wrong Steam branch |
@@ -73,20 +74,23 @@ uninstall plus install, so the plugin never removes lsfg-vk on its own. Your gam
 
 <a href="docs/screenshots/panel.png"><img src="docs/screenshots/panel.png" alt="DeckyLS in the Quick Access Menu while Nine Sols runs at 3×" width="360"></a>
 
-1. Start a game.
-2. Open **Quick Access Menu → DeckyLS** and set **Frame generation** to **2×**.
-3. **Restart the game once.** lsfg-vk joins a game when it starts; from then on every change
-   applies live, and **Off** keeps the game's settings for next time.
+1. Open **Quick Access Menu → DeckyLS** and, under **Games**, set your game to **2×**.
+2. Start the game. Frame generation runs from its first frame.
+3. While it runs, the game is at the top of the panel: change the multiplier, **Flow scale** or
+   **Performance mode**, or turn it **Off**; every change applies live.
 4. **Status** shows **On** when lsfg-vk runs in the game.
 
-With no game running, **Other games** lists the games you have set up so you can change them or
-turn them off.
+lsfg-vk joins a game when it starts. If you turn frame generation on for a game that is already
+running and was never set up, restart it once. **Off** keeps the game's settings and lsfg-vk stays
+ready in it, so turning it on again later works live.
+
+<a href="docs/screenshots/games.png"><img src="docs/screenshots/games.png" alt="Games: every installed game in alphabetical order with its own switch" width="360"></a>
 
 | Status | Meaning |
 |---|---|
 | On: lsfg-vk is running in this game | Frame generation runs; the panel says how lsfg-vk recognised the game |
 | Restart the game to start frame generation | The game was started before frame generation was turned on for it |
-| lsfg-vk uses the profile "…" for this game | Another profile matches the game first (for example one made by another tool); change that one under **Other games** |
+| lsfg-vk uses the profile "…" for this game | Another profile matches the game first (for example one made by another tool); change that one under **Games** |
 | Off | Frame generation is off for this game |
 
 **Tips:** frame generation needs a steady base frame rate; cap the game a little below what it
@@ -130,8 +134,11 @@ flow_scale = 1.0
 performance_mode = true
 ```
 
-Non-Steam games also get their executable name (for example `"Game.exe"`), read from the command
-line Steam started them with. **Off** is `multiplier = 1`, lsfg-vk's own off switch, so the profile
+The **Games** list comes from Steam's own files, without starting anything: the app manifests in
+every Steam library (internal drive and SD card; Proton, Steam Linux Runtime and Lossless Scaling
+itself are left out) and the non-Steam shortcuts in `shortcuts.vdf`. Non-Steam games also get their
+executable name (for example `"Game.exe"`) from the shortcut, or from the command line Steam
+started them with. **Off** is `multiplier = 1`, lsfg-vk's own off switch, so the profile
 and its settings stay and the file never ends up without profiles, which lsfg-vk would reject.
 Everything else in the file, including profiles from other tools, is written back unchanged and
 checked by reading the result back before it replaces the file; comments are not kept, so your
