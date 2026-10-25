@@ -217,21 +217,27 @@ class Plugin:
 
     async def _counter(self):
         """Keep the overlay window's label current while the counter is on: a new gamescope reading arrives a few
-        times a second; the running game is looked up every 2 s."""
-        overlay, sent, appid, next_scan, retry_at = None, None, 0, 0.0, 0.0
+        times a second; the running game and its X server are looked up every 2 s."""
+        overlay, sent, appid, display, next_scan, retry_at = None, None, 0, "", 0.0, 0.0
         try:
             while True:
                 now = time.monotonic()
                 if now >= next_scan:
                     appid = await asyncio.to_thread(lsfg_status.running_appid)
+                    game = await asyncio.to_thread(lsfg_status.find_game, appid) if appid else None
+                    display = (game and game["display"]) or display
                     next_scan = now + 2
                 fps = self.fps.current() if appid else None
                 label = lsfg_fps.label(fps, await self._live_multiplier(appid) if fps else 1)
                 self.fps_label = label
-                if label and (overlay is None or overlay.poll() is not None) and now >= retry_at:
+                if overlay is not None and overlay.poll() is None and overlay.display != display:
+                    # A game on another X server: the window has to move there.
+                    await asyncio.to_thread(self._close_overlay, overlay)
+                    overlay, retry_at = None, 0.0
+                if label and display and (overlay is None or overlay.poll() is not None) and now >= retry_at:
                     if overlay is not None:
                         decky.logger.warning(f"FPS overlay ended with {overlay.returncode}; restarting")
-                    overlay, sent, retry_at = self._spawn_overlay(), None, now + 10
+                    overlay, sent, retry_at = self._spawn_overlay(display), None, now + 10
                 if overlay is not None and overlay.poll() is None and label != sent:
                     try:
                         overlay.stdin.write(label + "\n")
@@ -241,26 +247,34 @@ class Plugin:
                         sent = None
                 await asyncio.sleep(0.25)
         finally:
-            if overlay is not None and overlay.poll() is None:
-                try:
-                    overlay.stdin.close()  # the window closes with its input
-                    await asyncio.to_thread(overlay.wait, 3)
-                except (OSError, subprocess.TimeoutExpired):
-                    overlay.kill()
+            if overlay is not None:
+                await asyncio.to_thread(self._close_overlay, overlay)
 
-    def _spawn_overlay(self):
-        # The system python3 with a clean environment: Decky's own libraries (LD_LIBRARY_PATH) must not leak in.
-        # :0 is the X server gamescope gives Steam and its overlays.
-        env = {"DISPLAY": ":0", "HOME": _home(), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+    @staticmethod
+    def _close_overlay(overlay):
+        if overlay.poll() is None:
+            try:
+                overlay.stdin.close()  # the window closes with its input
+                overlay.wait(3)
+            except (OSError, subprocess.TimeoutExpired):
+                overlay.kill()
+
+    def _spawn_overlay(self, display):
+        # On the game's own X server: gamescope shows an X server's overlays only while that server has the focus,
+        # so a window on Steam's server (:0) would appear only with the Steam UI open. The system python3 with a
+        # clean environment, so Decky's own libraries (LD_LIBRARY_PATH) do not leak in.
+        env = {"DISPLAY": display, "HOME": _home(), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
         try:
             log = open(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "overlay.log"), "w", encoding="utf-8")
             with log:
-                return subprocess.Popen(["/usr/bin/python3", "-I", os.path.join(PLUGIN_DIR, "lsfg_overlay.py")],
-                                        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log, env=env,
-                                        text=True)
+                overlay = subprocess.Popen(["/usr/bin/python3", "-I", os.path.join(PLUGIN_DIR, "lsfg_overlay.py")],
+                                           stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log, env=env,
+                                           text=True)
         except OSError as e:
             decky.logger.error(f"FPS overlay could not start: {e}")
             return None
+        overlay.display = display
+        return overlay
 
     async def _live_multiplier(self, appid):
         if type(appid) is not int or appid <= 0:

@@ -47,17 +47,28 @@ def _read(path):
 
 
 def find_game(appid, proc="/proc"):
-    """Steam's reaper for appid: {"exe": basename of what it launched, "started": epoch seconds}, or None."""
+    """Steam's reaper for appid: {"exe": basename of what it launched, "started": epoch seconds, "display": the
+    X server gamescope gave the game, "" if unknown}, or None."""
     key = f"AppId={appid}".encode()
     for path in glob.glob(os.path.join(proc, "[0-9]*", "cmdline")):
         try:
             argv = _read(path).split(b"\0")
             if not argv or not argv[0].endswith(b"/reaper") or key not in argv:
                 continue
-            return {"exe": _launched_exe(argv), "started": _started(os.path.dirname(path), proc)}
+            pid_dir = os.path.dirname(path)
+            return {"exe": _launched_exe(argv), "started": _started(pid_dir, proc), "display": _display(pid_dir)}
         except OSError:
             continue
     return None
+
+
+def _display(pid_dir):
+    try:
+        env = _read(os.path.join(pid_dir, "environ")).split(b"\0")
+    except OSError:
+        return ""
+    value = next((e[8:].decode(errors="replace") for e in env if e.startswith(b"DISPLAY=")), "")
+    return value if re.fullmatch(r":[0-9]{1,3}", value) else ""
 
 
 def running_appid(proc="/proc"):
