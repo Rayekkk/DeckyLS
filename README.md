@@ -100,7 +100,9 @@ and was never turned on in the list, restart it once.
 **FPS counter:** turn on **All games → FPS counter** to see, in the top-left corner, the game's own
 frame rate and the rate on screen, for example **48 / 144 FPS** at 3×. The screen cannot show more than
 its refresh rate, so a game at 60 fps set to 3× on a 144 Hz screen slows down to 48; the counter makes that
-visible. Steam's own performance overlay counts the frames on screen only.
+visible. Steam's own performance overlay counts the frames on screen only, and gamescope shows one of
+the two at a time: set **Performance overlay level** to **Off** in Steam's Quick Access Menu to see the
+counter.
 
 **Tips:** frame generation needs a steady base frame rate; cap the game a little below what it
 reaches (for example 40 fps for 80 fps at 2×). Lower **Flow scale** costs less GPU time, higher
@@ -166,8 +168,10 @@ the rate of the frames the game hands gamescope, generated ones included; nothin
 and DeckyLS reads it only while the counter is on. The game's own rate is that divided by the multiplier,
 shown only once lsfg-vk's log says it joined the game. The label is drawn by a small helper process
 (`lsfg_overlay.py`, the system Python with libX11 and cairo) in a transparent window marked
-`GAMESCOPE_EXTERNAL_OVERLAY` and `GAMESCOPE_NO_FOCUS`, as Steam's own performance overlay is: gamescope
-keeps it on top of the game and never gives it focus or input.
+`GAMESCOPE_EXTERNAL_OVERLAY` and `GAMESCOPE_NO_FOCUS` on Steam's X server, as Steam's own performance
+overlay is: gamescope keeps it on top of the game and never gives it focus or input. gamescope draws only
+the most opaque external overlay; the counter is just below fully opaque, so Steam's overlay wins while
+it is on.
 
 lsfg-vk is not part of the plugin. It is licensed CC BY-NC-ND 4.0, so DeckyLS never changes or
 ships it: **Install lsfg-vk** downloads the author's release archive from `builds.lsfg-vk.dev`,

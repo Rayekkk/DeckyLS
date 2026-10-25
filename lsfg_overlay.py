@@ -4,7 +4,9 @@
 """The FPS counter's window: a transparent X11 window that gamescope draws over games.
 
 It is marked GAMESCOPE_EXTERNAL_OVERLAY and GAMESCOPE_NO_FOCUS, as Steam's own performance overlay (mangoapp) is,
-so gamescope shows it on top of the game and never gives it focus or input; its input shape is empty too.
+so gamescope shows it on top of the game and never gives it focus or input; its input shape is empty too. It must
+live on Steam's X server (:0), and gamescope shows only one such overlay: with Steam's performance overlay on,
+that one wins.
 Reads one label per line on stdin and draws it in the top-left corner; an empty line hides the window. Ends when
 stdin closes. Runs as its own process with the system python3 (libX11, libXfixes and libcairo through ctypes), so
 nothing in it can take the plugin's backend down.
@@ -84,9 +86,12 @@ class Overlay:
         self.win = X.XCreateWindow(self.d, root, 0, 0, self.w, self.h, 0, 32, 1, info.visual,
                                    (1 << 13) | (1 << 3) | (1 << 1), ctypes.byref(attrs))
         X.XStoreName(self.d, self.win, b"DeckyLS FPS counter")
-        for name in (b"GAMESCOPE_EXTERNAL_OVERLAY", b"GAMESCOPE_NO_FOCUS"):
-            one = ctypes.c_long(1)
-            X.XChangeProperty(self.d, self.win, X.XInternAtom(self.d, name, 0), 6, 32, 0, ctypes.byref(one), 1)
+        # gamescope shows one external overlay at a time, the most opaque one. Just below opaque, so Steam's own
+        # performance overlay (mangoapp, fully opaque while shown) always wins, and the counter shows otherwise.
+        for name, value in ((b"GAMESCOPE_EXTERNAL_OVERLAY", 1), (b"GAMESCOPE_NO_FOCUS", 1),
+                            (b"_NET_WM_WINDOW_OPACITY", 0xFFFFFFFE)):
+            data = ctypes.c_ulong(value)
+            X.XChangeProperty(self.d, self.win, X.XInternAtom(self.d, name, 0), 6, 32, 0, ctypes.byref(data), 1)
         XF.XFixesSetWindowShapeRegion(self.d, self.win, SHAPE_INPUT, 0, 0, XF.XFixesCreateRegion(self.d, None, 0))
         self.surface = CAIRO.cairo_xlib_surface_create(self.d, self.win, info.visual, self.w, self.h)
         self.cr = CAIRO.cairo_create(self.surface)

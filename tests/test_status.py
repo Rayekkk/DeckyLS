@@ -20,11 +20,10 @@ class StatusTest(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
 
-    def proc(self, pid, argv, starttime=500, env=("DISPLAY=:1", "SteamAppId=1")):
+    def proc(self, pid, argv, starttime=500):
         d = pathlib.Path(self.root, "proc", str(pid))
         d.mkdir(parents=True)
         (d / "cmdline").write_bytes("\0".join(argv).encode())
-        (d / "environ").write_bytes("\0".join(env).encode() + b"\0")
         fields = ["S"] + ["0"] * 18 + [str(starttime)]
         (d / "stat").write_text(f"{pid} (rea per) " + " ".join(fields))
 
@@ -34,11 +33,9 @@ class StatusTest(unittest.TestCase):
         wrapper, reaper = REAPER_PROTON
         self.proc(10, wrapper + ["AppId=1809540"])  # the wrapper is not the reaper
         self.proc(11, reaper)
-        self.proc(12, REAPER_NATIVE, env=("DISPLAY=:1; rm -rf /",))
+        self.proc(12, REAPER_NATIVE)
         game = s.find_game(1809540, os.path.join(self.root, "proc"))
         self.assertEqual(game["exe"], "NineSols.exe")
-        self.assertEqual(game["display"], ":1", "the game's own X server, where its overlay must go")
-        self.assertEqual(s.find_game(3000000001, os.path.join(self.root, "proc"))["display"], "", "only :N is accepted")
         self.assertAlmostEqual(game["started"], 1700000000 + 500 / os.sysconf("SC_CLK_TCK")
                                if hasattr(os, "sysconf") else 0.0)
         self.assertEqual(s.find_game(3000000001, os.path.join(self.root, "proc"))["exe"], "RetroArch.AppImage")
