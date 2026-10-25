@@ -1,64 +1,217 @@
+<div align="center">
+
 # DeckyLS
 
-Lossless Scaling frame generation on SteamOS, for the game you are playing: open the Quick Access Menu, pick
-**2×**, play. A [Decky Loader](https://decky.xyz) plugin built on the official
-[lsfg-vk 2.0](https://lsfg-vk.dev) by PancakeTAS.
+[![Release](https://img.shields.io/github/v/release/Rayekkk/DeckyLS?style=for-the-badge&label=release&color=C2410C&labelColor=141417)](https://github.com/Rayekkk/DeckyLS/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Rayekkk/DeckyLS/total?style=for-the-badge&label=downloads&color=15803D&labelColor=141417)](https://github.com/Rayekkk/DeckyLS/releases)
+[![Engine](https://img.shields.io/badge/engine-lsfg--vk_2.0-6E40C9?style=for-the-badge&labelColor=141417)](https://lsfg-vk.dev)
+[![Requires](https://img.shields.io/badge/requires-Decky_Loader-0969DA?style=for-the-badge&labelColor=141417)](https://decky.xyz)
+[![License](https://img.shields.io/badge/license-BSD--3-424A53?style=for-the-badge&labelColor=141417)](#license)
 
-<img src="docs/screenshots/panel.png" alt="DeckyLS in the Quick Access Menu while Nine Sols runs at 3×" width="320">
+**Lossless Scaling frame generation on SteamOS, for the game you are playing.**
+Open the Quick Access Menu, pick 2×, play. Built on the official, unmodified lsfg-vk 2.0: no launch options, no environment variables, nothing added to your games.
 
-- **No launch options, no environment variables.** lsfg-vk recognises the game by its Steam App ID, so nothing
-  is added to your games and other launch-option tools keep working.
-- **Changes apply while you play.** Turning frame generation off, changing the multiplier, the flow scale or
-  performance mode reaches the running game within a second.
-- **Tells you what is really happening:** whether lsfg-vk joined the game, lsfg-vk's own health check, a missing
-  Lossless Scaling or the wrong Steam branch, and other plugins that also manage lsfg-vk.
-- **Official lsfg-vk, unchanged.** It is downloaded from its author's site and checked against a pinned hash;
-  removing it deletes exactly the files DeckyLS installed.
+[Features](#features) · [Requirements](#requirements) · [Installation](#installation) · [Quick start](#quick-start) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [AI disclaimer](#ai-disclaimer)
+
+</div>
+
+---
+
+## Features
+
+[lsfg-vk](https://lsfg-vk.dev) by PancakeTAS brings Lossless Scaling's frame generation to Linux
+as a Vulkan layer. Version 2.0 finds a game by its Steam App ID and reloads its settings while the
+game runs, so a launch option is no longer needed. DeckyLS installs lsfg-vk, gives you one menu
+for the running game and tells you whether frame generation really runs.
+
+| Feature | What you get |
+|---|---|
+| **One-tap setup** | Installs the official lsfg-vk 2.0.0 from its author's site and checks it against a pinned hash |
+| **One menu** | Frame generation **Off / 2× / 3× / 4×**, flow scale and performance mode for the game you are playing |
+| **Live changes** | Every change reaches the running game within a second |
+| **No launch options** | Your games' launch options stay untouched, so other launch-option tools keep working |
+| **Honest status** | Shows whether lsfg-vk joined the game and how it found it, lsfg-vk's own health check, a missing Lossless Scaling or the wrong Steam branch |
+| **Conflict warning** | Names other installed plugins that also manage lsfg-vk |
+| **Your settings stay** | Profiles DeckyLS did not create are kept, and your config file is backed up before the first change |
+| **Clean removal** | **Remove lsfg-vk** deletes exactly the files DeckyLS installed |
 
 ## Requirements
 
-- SteamOS (or another Linux with Decky Loader) on an x86_64 handheld or PC.
-- [Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/) bought and installed from Steam,
-  switched to the **lsfg-vk** branch: Lossless Scaling → Properties → Betas → `lsfg-vk`.
-- A game that renders through Vulkan, which includes Proton games (DirectX via DXVK / VKD3D). OpenGL games are
-  not supported by lsfg-vk.
+| Requirement | Details |
+|---|---|
+| System | SteamOS in Gaming Mode (or another x86_64 Linux) with [Decky Loader](https://decky.xyz) |
+| Lossless Scaling | Bought and installed from [Steam](https://store.steampowered.com/app/993090/Lossless_Scaling/), switched to the **lsfg-vk** branch: **Lossless Scaling → Properties → Betas → lsfg-vk** |
+| Games | Games that render through Vulkan, which includes Proton games (DirectX through DXVK or VKD3D-Proton). OpenGL games are not supported by lsfg-vk |
+| Network | Once, to download lsfg-vk from `builds.lsfg-vk.dev` |
 
-## Install
+Tested on a Legion Go 2 (SteamOS, Decky Loader 3.3) with Nine Sols under Proton 11. Flatpak apps
+(for example emulators from Flathub) are not supported yet.
 
-1. Download `DeckyLS-<version>.zip` from the latest release.
-2. Decky → Settings → Developer → **Install Plugin from ZIP**, choose the file.
-3. Open DeckyLS in the Quick Access Menu and press **Install lsfg-vk 2.0.0**.
+## Installation
 
-## Use
+1. Install [Decky Loader](https://decky.xyz) if you do not already have it.
+2. Download `DeckyLS-<version>.zip` from [Releases](https://github.com/Rayekkk/DeckyLS/releases).
+3. In Gaming Mode, open **Quick Access Menu → Decky → Settings**, turn on **Developer mode** under
+   **General**, then open **Developer**.
+4. Choose **Install Plugin from ZIP**, select the archive, then open **DeckyLS** in Decky.
+5. Press **Install lsfg-vk 2.0.0**.
 
-Start a game, open the Quick Access Menu → DeckyLS and choose **Frame generation: 2×** (or 3×, 4×). The first time
-you turn it on for a game, restart the game: lsfg-vk joins a game when it starts. After that, every change applies
-live. **Off** keeps the game's settings for next time.
+### Updating
 
-With no game running, the panel lists the games you have set up so you can change or turn them off.
+Install the newer ZIP the same way. lsfg-vk and your game settings stay as they are. When a release
+comes with a newer lsfg-vk, **About** offers **Update lsfg-vk to …**.
+
+<a href="docs/screenshots/about.png"><img src="docs/screenshots/about.png" alt="About: lsfg-vk health check and Remove lsfg-vk" width="360"></a>
+
+### Uninstalling
+
+Press **About → Remove lsfg-vk** first, then uninstall DeckyLS in Decky. Decky handles an update as
+uninstall plus install, so the plugin never removes lsfg-vk on its own. Your game settings stay in
+`~/.config/lsfg-vk/conf.toml`; delete that folder too for a full cleanup.
+
+## Quick start
+
+<a href="docs/screenshots/panel.png"><img src="docs/screenshots/panel.png" alt="DeckyLS in the Quick Access Menu while Nine Sols runs at 3×" width="360"></a>
+
+1. Start a game.
+2. Open **Quick Access Menu → DeckyLS** and set **Frame generation** to **2×**.
+3. **Restart the game once.** lsfg-vk joins a game when it starts; from then on every change
+   applies live, and **Off** keeps the game's settings for next time.
+4. **Status** shows **On** when lsfg-vk runs in the game.
+
+With no game running, **Other games** lists the games you have set up so you can change them or
+turn them off.
+
+| Status | Meaning |
+|---|---|
+| On: lsfg-vk is running in this game | Frame generation runs; the panel says how lsfg-vk recognised the game |
+| Restart the game to start frame generation | The game was started before frame generation was turned on for it |
+| lsfg-vk uses the profile "…" for this game | Another profile matches the game first (for example one made by another tool); change that one under **Other games** |
+| Off | Frame generation is off for this game |
+
+**Tips:** frame generation needs a steady base frame rate; cap the game a little below what it
+reaches (for example 40 fps for 80 fps at 2×). Lower **Flow scale** costs less GPU time, higher
+follows fast motion better. **Performance mode** uses a lighter model that suits handheld GPUs.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| "Install Lossless Scaling from Steam…" | Buy and install Lossless Scaling; lsfg-vk uses its files |
+| "In Steam, open Lossless Scaling → Properties → Betas…" | Switch Lossless Scaling to the **lsfg-vk** branch and let Steam update it |
+| Status still says restart after a restart | The game does not render through Vulkan (for example a native OpenGL game). If it has a Windows version, try it with Proton |
+| "Also installed: …" | Another plugin manages lsfg-vk too (Decky LSFG-VK, MAKO). Keep only one; uninstall the other |
+| "lsfg-vk is already installed by something else" | DeckyLS uses that installation. Remove it with the tool that installed it if you want DeckyLS to manage lsfg-vk |
+| "…conf.toml cannot be read…" | Fix or delete `~/.config/lsfg-vk/conf.toml`; DeckyLS never overwrites a file it cannot read. Your earlier file is in `conf.toml.bak-deckyls` |
+| **About** shows a health-check report instead of **Healthy** | Follow what it says; it comes from lsfg-vk's own `lsfg-vk-cli healthcheck` |
+| Ghosting or wobbly edges | Raise **Flow scale**, turn off **Performance mode**, or raise the base frame rate |
+| Download failed | Read the error and retry; nothing is installed from a failed or mismatched download |
+
+**Reporting a problem:** include the DeckyLS version, SteamOS version, the game, whether it runs on
+Proton, and what the panel says. [CHANGELOG.md](CHANGELOG.md) lists the changes in each version.
 
 ## How it works
 
-DeckyLS writes one profile per game to lsfg-vk's own configuration file, `~/.config/lsfg-vk/conf.toml`
-(`active_in = "<App ID>"`, plus the executable name for non-Steam games). lsfg-vk is a Vulkan layer that reads
-this file when a game starts and reloads it when it changes. Profiles and settings that DeckyLS did not create are
-kept, and the file you had before is saved once as `conf.toml.bak-deckyls`.
+<details>
+<summary><b>lsfg-vk, its config file and the status</b></summary>
 
-Updating or uninstalling the plugin leaves lsfg-vk and your settings in place; use **Remove lsfg-vk** in the panel
-first for a full cleanup.
+lsfg-vk is a Vulkan layer. When a game starts, it reads `~/.config/lsfg-vk/conf.toml` and looks
+for a profile whose `active_in` matches the game: its Steam App ID, its executable or its process
+name. It then watches the file and reloads it whenever it changes.
+
+DeckyLS writes one profile per game:
+
+```toml
+[[profile]]
+name = "Nine Sols"
+active_in = "1809540"
+multiplier = 2
+flow_scale = 1.0
+performance_mode = true
+```
+
+Non-Steam games also get their executable name (for example `"Game.exe"`), read from the command
+line Steam started them with. **Off** is `multiplier = 1`, lsfg-vk's own off switch, so the profile
+and its settings stay and the file never ends up without profiles, which lsfg-vk would reject.
+Everything else in the file, including profiles from other tools, is written back unchanged and
+checked by reading the result back before it replaces the file; comments are not kept, so your
+original file is copied once to `conf.toml.bak-deckyls`.
+
+lsfg-vk logs through the Steam client into the user journal. The **Status** line reads the profile
+lsfg-vk picked since the game started (`journalctl --user`) and compares it with the game's
+profile.
+
+lsfg-vk is not part of the plugin. It is licensed CC BY-NC-ND 4.0, so DeckyLS never changes or
+ships it: **Install lsfg-vk** downloads the author's release archive from `builds.lsfg-vk.dev`,
+accepts it only if its SHA-256 matches the hash pinned in this release, refuses any entry that
+would land outside `~/.local/bin`, `~/.local/lib` and `~/.local/share`, and unpacks it there as
+lsfg-vk's own install guide does. The files written are recorded and removed only by **Remove
+lsfg-vk**. `npm run package` refuses to build a ZIP that contains any lsfg-vk or Lossless Scaling
+file.
+
+</details>
 
 ## Development
 
+<details>
+<summary><b>Build, test and package from source</b></summary>
+
+Requires Node.js 24 and Python 3.11 or newer.
+
 ```bash
-npm ci
-npm run typecheck && npm run test:frontend && npm run build
-py -3.11 -W error -m unittest discover -s tests -p "test_*.py"
-npm run package
+npm ci --ignore-scripts --no-audit --no-fund
+npm run typecheck      # frontend types
+npm run test:frontend  # panel regression tests
+npm run test:backend   # Python backend tests
+npm run build          # compile the frontend
+npm run package        # create DeckyLS-<version>.zip
 ```
 
-`tools/device/` has the scripts used to install and drive the plugin on a handheld over SSH.
+Install the result through Decky's **Install Plugin from ZIP**. GitHub Actions runs the backend
+tests on Linux and Windows and checks the frontend and the built ZIP. Steam, Decky and the download
+are mocked; game sessions still need testing on the handheld (`tools/device/`: `decky_install.sh`
+installs a ZIP through Decky, `lscall.sh` calls the backend like the panel, `cdp.py` drives and
+screenshots the Steam UI).
 
-## Licence
+</details>
 
-BSD 3-Clause, see [LICENSE](LICENSE) and [NOTICE](NOTICE). lsfg-vk (CC BY-NC-ND 4.0) and Lossless Scaling are not
-part of this package. Not affiliated with PancakeTAS, THS or Valve.
+---
+
+## Credits
+
+- **PancakeTAS** and the [lsfg-vk](https://lsfg-vk.dev) contributors - the frame generation layer this plugin installs and configures
+- **THS** and [Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/) - the frame generation itself
+- [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) - the plugin platform
+
+Component licenses are recorded in [NOTICE](NOTICE).
+
+---
+
+## License
+
+Plugin code: BSD 3-Clause - see [LICENSE](LICENSE). lsfg-vk (CC BY-NC-ND 4.0) and Lossless
+Scaling are not included and stay under their own licences. Not affiliated with PancakeTAS, THS
+or Valve.
+
+---
+
+## AI disclaimer
+
+This project was built with substantial help from an AI coding assistant. The research, the
+plugin, the tests and this documentation were written by Anthropic's Claude Code working under my
+direction: I set the goal and the requirements (the official lsfg-vk only, unmodified; no launch
+options; nothing redistributed that may not be; a status that never pretends), made the decisions
+and chose what was released.
+
+The AI was used to:
+
+- compare the existing Lossless Scaling plugins and find what lsfg-vk 2.0 makes possible;
+- verify on the device how lsfg-vk 2.0 picks profiles, reloads its config and logs;
+- write the Decky plugin, its tests and this documentation.
+
+Nothing here is untested AI output. Every step was tested on my Legion Go 2 in Gaming Mode: the
+install from the plugin, a game started with and without a profile, live changes in a running game
+and the status the panel shows.
+
+DeckyLS installs lsfg-vk into your home folder and edits its config file. It is provided as is,
+without warranty (see [License](#license)); use it at your own risk.
