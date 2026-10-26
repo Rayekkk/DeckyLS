@@ -11,9 +11,7 @@ import struct
 
 import lsfg_status
 
-LOSSLESS_SCALING = 993090
-# Steam installs these like games; they are compatibility tools and runtimes.
-_TOOLS = re.compile(r"^(Proton\b|Steam Linux Runtime\b|Steamworks Common Redistributables\b)")
+LOSSLESS_SCALING = 993090  # Steam tools (Proton, runtimes...) are left out by the panel, which knows app types
 _FIELD = re.compile(r'^\s*"(appid|name)"\s+"((?:[^"\\]|\\.)*)"\s*$', re.M)
 
 
@@ -34,7 +32,7 @@ def steam_games(home):
             for key, value in _FIELD.findall(text):
                 fields.setdefault(key, _unescape(value))  # the app's own keys come before nested sections
             appid, name = fields.get("appid", ""), fields.get("name", "")
-            if appid.isdecimal() and name and int(appid) != LOSSLESS_SCALING and not _TOOLS.match(name):
+            if appid.isdecimal() and name and int(appid) != LOSSLESS_SCALING:
                 games[int(appid)] = {"appid": int(appid), "name": name, "exe": ""}
     return list(games.values())
 

@@ -2,6 +2,19 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.5.3] - 2026-10-26
+
+### Fixed
+
+- A **Flow scale** change made just before closing the menu was lost; it is now saved when the menu closes.
+- Right after a change, the panel could show the previous value again for up to 5 seconds.
+
+### Changed
+
+- The panel is lighter while it is open: lsfg-vk's health check runs again only when lsfg-vk changes, and
+  the system journal is read only until lsfg-vk has joined the running game, not every 5 seconds for the
+  whole session. A slow refresh is no longer stacked with the next one.
+
 ## [0.5.2] - 2026-10-25
 
 ### Added

@@ -33,19 +33,19 @@ class GamesTest(unittest.TestCase):
         self.steam = pathlib.Path(self.home, ".local/share/Steam")
         (self.steam / "steamapps").mkdir(parents=True)
 
-    def test_games_in_every_library_without_tools_or_lossless_scaling(self):
+    def test_apps_in_every_library_without_lossless_scaling(self):
+        # Steam tools stay in this list; the panel leaves them out by the app type Steam gives it.
         sd = pathlib.Path(self.home, "sd")
         (sd / "steamapps").mkdir(parents=True)
         (self.steam / "steamapps/libraryfolders.vdf").write_text(
             '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n}\n' % sd.as_posix())
         for folder, appid, name in ((self.steam, 1809540, "Nine Sols"), (sd, 1145360, 'Hades \\"II\\"'),
-                                    (self.steam, 993090, "Lossless Scaling"), (self.steam, 1493710, "Proton Experimental"),
-                                    (sd, 1628350, "Steam Linux Runtime 3.0 (sniper)"),
-                                    (self.steam, 228980, "Steamworks Common Redistributables")):
+                                    (self.steam, 993090, "Lossless Scaling"), (sd, 1493710, "Proton Experimental")):
             (folder / f"steamapps/appmanifest_{appid}.acf").write_text(manifest(appid, name), encoding="utf-8")
         (self.steam / "steamapps/appmanifest_1.acf").write_text("broken")
         found = sorted((x["appid"], x["name"], x["exe"]) for x in g.steam_games(self.home))
-        self.assertEqual(found, [(1145360, 'Hades "II"', ""), (1809540, "Nine Sols", "")])
+        self.assertEqual(found, [(1145360, 'Hades "II"', ""), (1493710, "Proton Experimental", ""),
+                                 (1809540, "Nine Sols", "")])
 
     def test_shortcuts_give_their_windows_exe(self):
         config = self.steam / "userdata/123/config"

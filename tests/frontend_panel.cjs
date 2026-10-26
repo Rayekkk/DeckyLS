@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..'), ts = require(path.join(root, 'node_m
 const settle = async () => { for (let i = 0; i < 24; i++) await Promise.resolve(); };
 
 function harness(runningApp) {
-  const slots = [], effects = new Map(), pending = [], calls = [], timers = [];
+  const slots = [], effects = new Map(), pending = [], calls = [], timers = [], intervals = [];
   let cursor = 0;
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => v === b[i]);
   const hooks = {
@@ -37,7 +37,7 @@ function harness(runningApp) {
   vm.runInNewContext(output, {
     module: mod, exports: mod.exports, console, appStore, SteamClient,
     setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
-    clearTimeout: t => { if (t) t.done = true; }, setInterval: () => 1, clearInterval() {},
+    clearTimeout: t => { if (t) t.done = true; }, setInterval: fn => intervals.push(fn), clearInterval() {},
     require(name) {
       if (name === 'react') return hooks;
       if (name === 'react/jsx-runtime') return jsx;
@@ -49,6 +49,8 @@ function harness(runningApp) {
   const render = () => { cursor = 0; const tree = mod.exports.Content({}); pending.splice(0).forEach(fn => fn()); return tree; };
   return {
     render, calls, timers, steam,
+    tick() { intervals.forEach(fn => fn()); },  // the 5 s poll
+    unmount() { for (const e of effects.values()) e.cleanup?.(); effects.clear(); },  // the menu closes
     respond(name, value) {
       const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
       call.settled = true; call.resolve(value); return call;
@@ -112,6 +114,42 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     const saves = h.calls.filter(c => c.name === 'set_profile');
     assert.equal(saves.length, 1);
     assert.deepEqual(saves[0].args, [['1809540'], 'Nine Sols', { multiplier: 3, flow_scale: 0.85, performance_mode: true, ...Q }, 1809540, 'Nine Sols']);
+  }
+
+  // Closing the menu while the slider is still settling sends the change instead of dropping it.
+  {
+    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q };
+    h.respond('get_state', game(on, { profile: 'Nine Sols', via: 'Steam App ID' }));
+    await settle();
+    find(h.render(), 'SliderField').props.onChange(70);
+    assert.ok(!h.calls.some(c => c.name === 'set_profile'), 'still waiting for the slider to settle');
+    h.unmount();
+    assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args,
+      [['1809540'], 'Nine Sols', { multiplier: 2, flow_scale: 0.7, performance_mode: true, ...Q }, 1809540, 'Nine Sols']);
+  }
+
+  // A poll that started before a change cannot put the old value back, and polls never stack up.
+  {
+    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    const two = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q };
+    h.respond('get_state', game(two, { profile: 'Nine Sols', via: 'Steam App ID' }));
+    await settle();
+    h.render();
+    h.tick();
+    h.tick();
+    assert.equal(h.calls.filter(c => c.name === 'get_state' && !c.settled).length, 1, 'one poll at a time');
+    find(h.render(), 'DropdownItem', 'Frame generation').props.onChange({ data: 3 });
+    h.fire();
+    h.respond('set_profile', game({ ...two, multiplier: 3 }, { profile: 'Nine Sols', via: 'Steam App ID' }));
+    await settle();
+    h.respond('get_state', game(two, { profile: 'Nine Sols', via: 'Steam App ID' }));  // the late, outdated poll
+    await settle();
+    assert.equal(find(h.render(), 'DropdownItem', 'Frame generation').props.selectedOption, 3);
+    h.tick();
+    assert.equal(h.calls.filter(c => c.name === 'get_state' && !c.settled).length, 1, 'polling goes on afterwards');
   }
 
   // Multipliers up to 8x; compatibility options are folded away and keep every other setting; FP16 is global.

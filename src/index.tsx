@@ -105,7 +105,11 @@ function status(game: NonNullable<State["game"]>): string {
 }
 
 // One pending save per game, so a slider still settling never swallows a switch flipped on another game.
-const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+// Closing the menu sends what is still pending instead of dropping it.
+const pendingSaves: Record<string, { timer: ReturnType<typeof setTimeout>; send: () => void }> = {};
+// Bumped by every change: a poll that started before the latest change answers with an outdated state.
+let changeSeq = 0;
+let polling = false;  // a slow poll is not stacked with the next one
 
 const Content: FC = () => {
   const [state, setState] = useState<State | null>(null);
@@ -115,26 +119,41 @@ const Content: FC = () => {
   const [showGames, setShowGames] = useState(false);
   const [showCompat, setShowCompat] = useState(false);
 
-  const refresh = useCallback(() => getState(...runningGame()).then(setState, () => {}), []);
+  const refresh = useCallback(() => {
+    if (polling) return;
+    polling = true;
+    const seq = changeSeq;
+    getState(...runningGame()).then(s => { if (seq === changeSeq) setState(s); }, () => {})
+      .finally(() => { polling = false; });
+  }, []);
   useEffect(() => {
     refresh();
     const timer = setInterval(refresh, REFRESH_MS);
-    return () => { clearInterval(timer); Object.values(saveTimers).forEach(clearTimeout); };
+    return () => {
+      clearInterval(timer);
+      for (const pending of Object.values(pendingSaves)) {
+        clearTimeout(pending.timer);
+        pending.send();
+      }
+    };
   }, [refresh]);
 
   const save = useCallback((profile: { name: string; ids: string[] }, next: Settings | null, delay = 0) => {
     const key = profile.ids.join("\n");
     setDraft(d => ({ ...d, [key]: next }));
-    clearTimeout(saveTimers[key]);
-    saveTimers[key] = setTimeout(() => {
-      delete saveTimers[key];
+    const send = () => {
+      delete pendingSaves[key];
+      changeSeq++;
       (next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
         : removeProfile(profile.ids, ...runningGame()))
         .then(s => { setState(s); setDraft(d => { const { [key]: _, ...rest } = d; return rest; }); }, () => {});
-    }, delay);
+    };
+    clearTimeout(pendingSaves[key]?.timer);
+    pendingSaves[key] = { timer: setTimeout(send, delay), send };
   }, []);
 
   const run = useCallback((action: (...a: GameArgs) => Promise<State>) => {
+    changeSeq++;
     setState(s => s && { ...s, busy: "Working…" });
     action(...runningGame()).then(setState, () => refresh());
   }, [refresh]);

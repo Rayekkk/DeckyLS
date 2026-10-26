@@ -12,6 +12,7 @@ import json
 import math
 import os
 import sys
+import time
 
 import decky
 
@@ -99,10 +100,33 @@ class Plugin:
         self.lock = asyncio.Lock()
         self.busy = ""
         self.error = ""
+        # The panel asks for the state every 5 s; these change rarely, so they are worked out only when needed.
+        self.health = (None, None)  # (cli path and its mtime, healthcheck result)
+        self.joined = {}  # (appid, game start) -> {"attached": ..., "checked": monotonic time}
+
+    async def _healthcheck(self, home):
+        cli = lsfg_install.find_cli(home)
+        try:
+            key = (cli, os.stat(cli).st_mtime_ns) if cli else None
+        except OSError:
+            key = None
+        if key is None or self.health[0] != key:
+            self.health = (key, await asyncio.to_thread(lsfg_install.healthcheck, cli))
+        return self.health[1]
+
+    async def _attached(self, appid, started):
+        """The profile lsfg-vk joined the game with: read from the journal until it has joined (at most every
+        10 s), then remembered for that game session instead of rereading a journal that grows all session."""
+        known = self.joined.get((appid, started))
+        if known is None or (known["attached"] is None and time.monotonic() - known["checked"] >= 10):
+            lines = await asyncio.to_thread(lsfg_status.journal_since, started)
+            known = {"attached": lsfg_status.attached_profile(lines), "checked": time.monotonic()}
+            self.joined = {(appid, started): known}
+        return known["attached"]
 
     async def get_state(self, appid: int = 0, name: str = "") -> dict:
         home = _home()
-        health = await asyncio.to_thread(lsfg_install.healthcheck, lsfg_install.find_cli(home))
+        health = await self._healthcheck(home)
         state = {
             "version": VERSION,
             "pinned": lsfg_install.LSFG_VERSION,
@@ -128,10 +152,7 @@ class Plugin:
             running = await asyncio.to_thread(lsfg_status.find_game, appid)
             ids = _ids(appid, running["exe"] if running else "")
             profile = lsfg_config.find(data, ids) if data else None
-            attached = None
-            if running and running["started"]:
-                lines = await asyncio.to_thread(lsfg_status.journal_since, running["started"])
-                attached = lsfg_status.attached_profile(lines)
+            attached = await self._attached(appid, running["started"]) if running and running["started"] else None
             state["game"] = {
                 "appid": appid, "name": str(name)[:128], "ids": ids, "running": running is not None,
                 "settings": _view(profile) if profile else None,
@@ -200,6 +221,7 @@ class Plugin:
                 decky.logger.error(f"installing lsfg-vk failed: {e}")
             finally:
                 self.busy = ""
+                self.health = (None, None)
         return await self.get_state(appid, name)
 
     async def remove_lsfg(self, appid: int = 0, name: str = "") -> dict:
@@ -209,6 +231,7 @@ class Plugin:
             decky.logger.info(f"removed lsfg-vk ({len(self.manifest.files)} files)")
             self.manifest.clear()
             self.error = ""
+            self.health = (None, None)
         return await self.get_state(appid, name)
 
     async def _unload(self):
