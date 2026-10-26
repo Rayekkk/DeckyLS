@@ -2,6 +2,15 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.5.5] - 2026-10-26
+
+### Fixed
+
+- When a change cannot be saved, the panel no longer keeps showing it as if it were: it goes back to the
+  saved value and shows why.
+- A game name with a character TOML does not allow as-is (DEL) is written escaped instead of failing the
+  save; any other text that cannot be written is reported in the panel, and nothing is left half-written.
+
 ## [0.5.4] - 2026-10-26
 
 ### Fixed
