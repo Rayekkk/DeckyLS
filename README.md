@@ -1,6 +1,6 @@
 <div align="center">
 
-# DeckyLS
+<img src="docs/logo.webp" alt="DeckyLS: Lossless Scaling, one tap from any game" width="760">
 
 [![Release](https://img.shields.io/github/v/release/Rayekkk/DeckyLS?style=for-the-badge&label=release&color=C2410C&labelColor=141417)](https://github.com/Rayekkk/DeckyLS/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Rayekkk/DeckyLS/total?style=for-the-badge&label=downloads&color=15803D&labelColor=141417)](https://github.com/Rayekkk/DeckyLS/releases)
