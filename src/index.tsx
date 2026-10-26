@@ -147,11 +147,16 @@ const Content: FC = () => {
       changeSeq++;
       (next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
         : removeProfile(profile.ids, ...runningGame()))
-        .then(s => { setState(s); setDraft(d => { const { [key]: _, ...rest } = d; return rest; }); }, () => {});
+        .then(setState, () => refresh(true))  // a failed save shows the real state again, not the unsaved value
+        .finally(() => setDraft(d => {
+          if (d[key] !== next) return d;  // a newer change of this game is still on its way
+          const { [key]: _, ...rest } = d;
+          return rest;
+        }));
     };
     clearTimeout(pendingSaves[key]?.timer);
     pendingSaves[key] = { timer: setTimeout(send, delay), send };
-  }, []);
+  }, [refresh]);
 
   const run = useCallback((action: (...a: GameArgs) => Promise<State>) => {
     changeSeq++;

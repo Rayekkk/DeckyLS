@@ -56,6 +56,10 @@ function harness(runningApp) {
       const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
       call.settled = true; call.resolve(value); return call;
     },
+    fail(name) {
+      const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
+      call.settled = true; call.reject(new Error('backend gone')); return call;
+    },
     fire() { timers.filter(t => !t.done).forEach(t => { t.done = true; t.fn(); }); },
   };
 }
@@ -129,6 +133,28 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     h.unmount();
     assert.deepEqual(h.calls.find(c => c.name === 'set_profile').args,
       [['1809540'], 'Nine Sols', { multiplier: 2, flow_scale: 0.7, performance_mode: true, ...Q }, 1809540, 'Nine Sols']);
+  }
+
+  // A save the backend rejects does not leave the unsaved value on screen; the real state is fetched instead.
+  // An answer to an older change of a game never wipes a newer one still on its way.
+  {
+    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    const two = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q };
+    h.respond('get_state', game(two, { profile: 'Nine Sols', via: 'Steam App ID' }));
+    await settle();
+    find(h.render(), 'DropdownItem', 'Frame generation').props.onChange({ data: 4 });
+    h.fire();
+    h.fail('set_profile');
+    await settle();
+    assert.equal(find(h.render(), 'DropdownItem', 'Frame generation').props.selectedOption, 2, 'back to what is saved');
+    assert.ok(h.calls.some(c => c.name === 'get_state' && !c.settled), 'and the state is asked for at once');
+    find(h.render(), 'DropdownItem', 'Frame generation').props.onChange({ data: 3 });
+    h.fire();
+    find(h.render(), 'SliderField').props.onChange(60);  // a newer change, not sent yet
+    h.respond('set_profile', game({ ...two, multiplier: 3 }, { profile: 'Nine Sols', via: 'Steam App ID' }));
+    await settle();
+    assert.equal(find(h.render(), 'SliderField').props.value, 60, 'the newer change stays on screen');
   }
 
   // A poll that started before a change cannot put the old value back, and polls never stack up.
