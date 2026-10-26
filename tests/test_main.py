@@ -70,6 +70,12 @@ class MainTest(unittest.TestCase):
                 mock.patch.object(main.lsfg_install, "healthcheck", return_value={"ok": True, "text": "", "version": "2"}) as health, \
                 mock.patch.object(main.lsfg_status, "find_game", return_value=game), \
                 mock.patch.object(main.lsfg_status, "journal_since", return_value=[]) as journal:
+            # A game without a profile, or set to Off, shows "Off": the journal is not read at all.
+            asyncio.run(self.plugin.get_state(1809540, "Nine Sols"))
+            self.call(["1809540"], "Nine Sols", settings(multiplier=1))
+            asyncio.run(self.plugin.get_state(1809540, "Nine Sols"))
+            self.assertEqual(journal.call_count, 0)
+            self.call(["1809540"], "Nine Sols", settings(multiplier=2))
             for _ in range(3):
                 asyncio.run(self.plugin.get_state(1809540, "Nine Sols"))
             self.assertEqual((health.call_count, journal.call_count), (1, 1), "no rereads within seconds")

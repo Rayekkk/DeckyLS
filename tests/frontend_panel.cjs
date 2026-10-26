@@ -51,6 +51,7 @@ function harness(runningApp) {
     render, calls, timers, steam,
     tick() { intervals.forEach(fn => fn()); },  // the 5 s poll
     unmount() { for (const e of effects.values()) e.cleanup?.(); effects.clear(); },  // the menu closes
+    remount() { this.unmount(); slots.length = 0; return render(); },  // closed and opened again
     respond(name, value) {
       const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
       call.settled = true; call.resolve(value); return call;
@@ -150,6 +151,9 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     assert.equal(find(h.render(), 'DropdownItem', 'Frame generation').props.selectedOption, 3);
     h.tick();
     assert.equal(h.calls.filter(c => c.name === 'get_state' && !c.settled).length, 1, 'polling goes on afterwards');
+    // Closed and opened again while that poll is still running: the new panel asks at once, no 5 s spinner.
+    h.remount();
+    assert.equal(h.calls.filter(c => c.name === 'get_state' && !c.settled).length, 2);
   }
 
   // Multipliers up to 8x; compatibility options are folded away and keep every other setting; FP16 is global.

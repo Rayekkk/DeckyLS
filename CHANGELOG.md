@@ -2,6 +2,20 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [0.5.4] - 2026-10-26
+
+### Fixed
+
+- With the menu open, DeckyLS no longer fills Decky's log: it read every installed plugin's manifest every
+  5 seconds (Decky logs each file opened in its plugin folder in developer mode). It now looks again only
+  when a plugin is added or removed.
+- Reopening the menu right after closing it could show the loading spinner for up to 5 seconds.
+
+### Changed
+
+- The system journal is read only for a running game set to 2× or more; games without frame generation
+  cost nothing while the menu is open.
+
 ## [0.5.3] - 2026-10-26
 
 ### Fixed

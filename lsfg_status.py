@@ -100,11 +100,22 @@ def attached_profile(lines):
     return None
 
 
+_rivals = {}  # plugins folder -> (its mtime, names found)
+
+
 def rival_plugins(plugin_dir):
-    """Names of other installed Decky plugins that also manage lsfg-vk."""
+    """Names of other installed Decky plugins that also manage lsfg-vk. Read again only when a plugin is added or
+    removed (the folder's mtime): Decky's file watcher logs every file opened in there, and the panel asks every 5 s."""
     own = os.path.realpath(plugin_dir)
+    folder = os.path.dirname(own)
+    try:
+        stamp = os.stat(folder).st_mtime_ns
+    except OSError:
+        return []
+    if folder in _rivals and _rivals[folder][0] == stamp:
+        return _rivals[folder][1]
     found = []
-    for manifest in sorted(glob.glob(os.path.join(os.path.dirname(own), "*", "plugin.json"))):
+    for manifest in sorted(glob.glob(os.path.join(folder, "*", "plugin.json"))):
         if os.path.realpath(os.path.dirname(manifest)) == own:
             continue
         try:
@@ -114,4 +125,5 @@ def rival_plugins(plugin_dir):
             continue
         if isinstance(name, str) and _RIVALS.search(name):
             found.append(name)
+    _rivals[folder] = (stamp, found)
     return found

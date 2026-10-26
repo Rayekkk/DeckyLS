@@ -152,7 +152,10 @@ class Plugin:
             running = await asyncio.to_thread(lsfg_status.find_game, appid)
             ids = _ids(appid, running["exe"] if running else "")
             profile = lsfg_config.find(data, ids) if data else None
-            attached = await self._attached(appid, running["started"]) if running and running["started"] else None
+            # Only a game set to 2x or more needs to know whether lsfg-vk joined it; the others show "Off".
+            multiplier = profile.get("multiplier", LSFG_DEFAULTS["multiplier"]) if profile else 1
+            wanted = type(multiplier) is int and multiplier > 1 and running and running["started"]
+            attached = await self._attached(appid, running["started"]) if wanted else None
             state["game"] = {
                 "appid": appid, "name": str(name)[:128], "ids": ids, "running": running is not None,
                 "settings": _view(profile) if profile else None,

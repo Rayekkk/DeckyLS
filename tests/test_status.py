@@ -2,8 +2,10 @@
 import json
 import os
 import pathlib
+import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import _harness  # noqa: F401
 import lsfg_status as s
@@ -73,6 +75,12 @@ class StatusTest(unittest.TestCase):
         (plugins / "broken").mkdir()
         (plugins / "broken" / "plugin.json").write_text("{")
         self.assertEqual(s.rival_plugins(str(plugins / "DeckyLS")), ["MAKO Decky", "Decky LSFG-VK"])
+        # Asked again with nothing added or removed: no plugin.json is opened (Decky logs every open).
+        with mock.patch("builtins.open", side_effect=AssertionError("opened a plugin.json")):
+            self.assertEqual(s.rival_plugins(str(plugins / "DeckyLS")), ["MAKO Decky", "Decky LSFG-VK"])
+        shutil.rmtree(plugins / "Mako")
+        os.utime(plugins, ns=(0, 10 ** 9))  # some filesystems keep a folder's mtime to the second
+        self.assertEqual(s.rival_plugins(str(plugins / "DeckyLS")), ["Decky LSFG-VK"], "a removed plugin is noticed")
 
 
 if __name__ == "__main__":

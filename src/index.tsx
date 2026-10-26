@@ -119,16 +119,17 @@ const Content: FC = () => {
   const [showGames, setShowGames] = useState(false);
   const [showCompat, setShowCompat] = useState(false);
 
-  const refresh = useCallback(() => {
-    if (polling) return;
+  // first: a panel just opened always asks, even if the poll of a panel closed a moment ago is still running.
+  const refresh = useCallback((first = false) => {
+    if (polling && !first) return;
     polling = true;
     const seq = changeSeq;
     getState(...runningGame()).then(s => { if (seq === changeSeq) setState(s); }, () => {})
       .finally(() => { polling = false; });
   }, []);
   useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, REFRESH_MS);
+    refresh(true);
+    const timer = setInterval(() => refresh(), REFRESH_MS);
     return () => {
       clearInterval(timer);
       for (const pending of Object.values(pendingSaves)) {
