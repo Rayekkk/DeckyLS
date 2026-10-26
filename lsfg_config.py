@@ -110,7 +110,8 @@ def _value(value):
     if isinstance(value, float) and math.isfinite(value):
         return repr(value)
     if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)  # JSON string escapes are valid TOML basic-string escapes
+        # JSON string escapes are valid TOML basic-string escapes; TOML also forbids a raw DEL, which JSON keeps.
+        return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
     if isinstance(value, list):
         return "[" + ", ".join(_value(v) for v in value) + "]"
     raise ConfigError(f"DeckyLS cannot write a value of type {type(value).__name__} back; the file is left as it is.")
@@ -132,12 +133,12 @@ def dumps(data):
 
 
 def save(path, data):
-    text = dumps(data)
+    text = dumps(data).encode("utf-8")  # fails here, before any file is touched, on text UTF-8 cannot hold
     os.makedirs(os.path.dirname(path), exist_ok=True)
     backup = path + BACKUP_SUFFIX
     if os.path.exists(path) and not os.path.exists(backup):
         shutil.copy2(path, backup)
     tmp = path + ".deckyls-tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "wb") as f:
         f.write(text)
     os.replace(tmp, path)

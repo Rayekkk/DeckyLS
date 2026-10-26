@@ -94,6 +94,12 @@ class MainTest(unittest.TestCase):
             self.assertEqual(journal.call_count, 3)
         os.remove(cli)
 
+    def test_a_name_toml_cannot_hold_is_reported_not_raised(self):
+        state = self.call(["1"], "Lone \ud800 surrogate", settings())
+        self.assertIn("encode", state["error"], "shown in the panel, not an unhandled exception")
+        folder = os.path.dirname(self.plugin.config_path)
+        self.assertEqual(os.listdir(folder) if os.path.isdir(folder) else [], [], "nothing half-written")
+
     def test_running_game_gets_a_profile_and_its_state(self):
         state = self.call(["1809540"], "Nine Sols", settings(multiplier=8, flow_scale=0.8,
                                                              preserve_swapchain_image_count=True), appid=1809540)

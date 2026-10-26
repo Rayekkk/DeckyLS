@@ -97,7 +97,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_names_with_quotes_newlines_and_unicode_round_trip(self):
         data = c.load(self.path)
-        name = 'Ä "quoted" \\ back\nslash ✓'
+        name = 'Ä "quoted" \\ back\nslash ✓ del\x7f'
         c.set_profile(data, name, ["1"], {"multiplier": 2, "flow_scale": 1.0, "performance_mode": True})
         self.assertEqual(tomllib.loads(c.dumps(data))["profile"][0]["name"], name)
 

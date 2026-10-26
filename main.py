@@ -172,7 +172,7 @@ class Plugin:
                 await asyncio.to_thread(lsfg_config.save, self.config_path, data)
                 self.error = ""
                 decky.logger.info(what)
-            except (lsfg_config.ConfigError, OSError) as e:
+            except (lsfg_config.ConfigError, OSError, ValueError) as e:  # ValueError: a text TOML cannot hold
                 self.error = str(e)
                 decky.logger.error(f"saving the lsfg-vk config failed: {e}")
         return await self.get_state(appid, game_name)
