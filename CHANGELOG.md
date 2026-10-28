@@ -2,6 +2,22 @@
 
 All notable changes to DeckyLS, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Panel:** when DeckyLS cannot read its state, the menu shows why instead of a loading spinner that never ends,
+  and keeps trying.
+- **Remove lsfg-vk:** a file that cannot be deleted is reported in the panel and stays on DeckyLS's list, so
+  pressing the button again finishes the job.
+- **Install lsfg-vk:** an install cut short (full disk, plugin restarted) no longer forgets the files it already
+  wrote; they can be removed from the panel or the install finished.
+
+### Changed
+
+- **Panel:** with the menu open, the game library is read again only when a game or shortcut is added or removed,
+  not every 5 seconds.
+
 ## [0.5.5] - 2026-10-26
 
 ### Fixed

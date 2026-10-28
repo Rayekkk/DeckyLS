@@ -179,14 +179,14 @@ npm run typecheck      # frontend types
 npm run test:frontend  # panel regression tests
 npm run test:backend   # Python backend tests
 npm run build          # compile the frontend
-npm run package        # create DeckyLS-<version>.zip
+npm run package        # create artifacts/DeckyLS-<version>.zip and its .sha256
+npm run check          # all of the above
 ```
 
 Install the result through Decky's **Install Plugin from ZIP**. GitHub Actions runs the backend
 tests on Linux and Windows and checks the frontend and the built ZIP. Steam, Decky and the download
-are mocked; game sessions still need testing on the handheld (`tools/device/`: `decky_install.sh`
-installs a ZIP through Decky, `lscall.sh` calls the backend like the panel, `cdp.py` drives and
-screenshots the Steam UI).
+are mocked; game sessions still need testing on the handheld (`tools/device/`: `lscall.sh` calls the
+backend like the panel, `cdp.py` drives and screenshots the Steam UI).
 
 </details>
 

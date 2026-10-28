@@ -15,6 +15,8 @@ import re
 import shutil
 import tomllib
 
+import dk_fs
+
 VERSION = 2
 BACKUP_SUFFIX = ".bak-deckyls"
 # lsfg-vk rejects a file without profiles; this one stands in for the last removed game and matches nothing.
@@ -138,7 +140,4 @@ def save(path, data):
     backup = path + BACKUP_SUFFIX
     if os.path.exists(path) and not os.path.exists(backup):
         shutil.copy2(path, backup)
-    tmp = path + ".deckyls-tmp"
-    with open(tmp, "wb") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    dk_fs.write_atomic(path, text)

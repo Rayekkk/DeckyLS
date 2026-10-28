@@ -10,6 +10,8 @@ import os
 import re
 import subprocess
 
+import dk_process
+
 LS_DIR = "Lossless Scaling"
 LS_DLL = "lsfg-vk.dll"  # only the "lsfg-vk" beta branch of Lossless Scaling has it
 _LIBRARY_PATH = re.compile(r'^\s*"path"\s+"(.*)"\s*$', re.M)
@@ -84,8 +86,8 @@ def _started(pid_dir, proc):
 def journal_since(since):
     """lsfg-vk's log lines since an epoch time; it logs through the Steam client into the user journal."""
     try:
-        result = subprocess.run(["journalctl", "--user", "--no-pager", "-o", "cat", f"--since=@{int(since)}",
-                                 "SYSLOG_IDENTIFIER=steam"], capture_output=True, text=True, timeout=10)
+        result = dk_process.run(["journalctl", "--user", "--no-pager", "-o", "cat", f"--since=@{int(since)}",
+                                 "SYSLOG_IDENTIFIER=steam"], timeout=10, capture_output=True)
     except (OSError, subprocess.SubprocessError):
         return []
     return [line for line in result.stdout.splitlines() if "(lsfg-vk)" in line]

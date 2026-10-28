@@ -20,6 +20,7 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
+import dk_rpc  # noqa: E402
 import lsfg_config  # noqa: E402
 import lsfg_games  # noqa: E402
 import lsfg_install  # noqa: E402
@@ -37,6 +38,10 @@ LSFG_DEFAULTS = {"multiplier": 2, "flow_scale": 1.0, "performance_mode": False, 
                  "preserve_swapchain_image_count": False}
 SWITCHES = ("performance_mode", "override_present_mode", "preserve_swapchain_image_count")
 SHORTCUT_BIT = 0x80000000  # non-Steam shortcuts have the top bit of their app id set
+INVALID = "Invalid settings were rejected."
+
+_ready = asyncio.Event()
+rpc = dk_rpc.boundary(decky.logger, _ready)
 
 
 def _home():
@@ -94,15 +99,21 @@ def _library(games, data):
 
 class Plugin:
     async def _main(self):
-        os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
-        self.manifest = lsfg_install.Manifest(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "installed.json"))
-        self.config_path = lsfg_config.config_path(_home())
-        self.lock = asyncio.Lock()
-        self.busy = ""
-        self.error = ""
-        # The panel asks for the state every 5 s; these change rarely, so they are worked out only when needed.
-        self.health = (None, None)  # (cli path and its mtime, healthcheck result)
-        self.joined = {}  # (appid, game start) -> {"attached": ..., "checked": monotonic time}
+        try:
+            self.lock = asyncio.Lock()
+            self.busy = ""
+            self.error = ""  # the last failed change, shown in the panel until the next change succeeds
+            # The panel asks for the state every 5 s; these change rarely, so they are worked out only when needed.
+            self.health = (None, None)  # (cli path and its mtime, healthcheck result)
+            self.joined = {}  # (appid, game start) -> {"attached": ..., "checked": monotonic time}
+            self.config_path = lsfg_config.config_path(_home())
+            os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
+            self.manifest = lsfg_install.Manifest(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "installed.json"))
+            if self.manifest.problem:
+                self.error = self.manifest.problem
+                decky.logger.error(self.manifest.problem)
+        finally:
+            _ready.set()  # even after a failure: the calls then answer with an error instead of hanging
 
     async def _healthcheck(self, home):
         cli = lsfg_install.find_cli(home)
@@ -124,7 +135,7 @@ class Plugin:
             self.joined = {(appid, started): known}
         return known["attached"]
 
-    async def get_state(self, appid: int = 0, name: str = "") -> dict:
+    async def _state(self, appid, name):
         home = _home()
         health = await self._healthcheck(home)
         state = {
@@ -163,8 +174,17 @@ class Plugin:
             }
         return state
 
+    async def _reply(self, appid, name):
+        """The answer to a change: the new state, and the change's error when it failed."""
+        state = await self._state(appid, name)
+        return dk_rpc.fail(self.error, state) if self.error else dk_rpc.ok(state)
+
+    @rpc
+    async def get_state(self, appid: int = 0, name: str = "") -> dict:
+        return dk_rpc.ok(await self._state(appid, name))
+
     async def _change(self, change, what, appid, game_name):
-        """Apply change(data) to the config file; returns the state for the running game (appid, game_name)."""
+        """Apply change(data) to the config file; answers with the state for the running game (appid, game_name)."""
         async with self.lock:
             try:
                 data = lsfg_config.load(self.config_path)
@@ -175,49 +195,58 @@ class Plugin:
             except (lsfg_config.ConfigError, OSError, ValueError) as e:  # ValueError: a text TOML cannot hold
                 self.error = str(e)
                 decky.logger.error(f"saving the lsfg-vk config failed: {e}")
-        return await self.get_state(appid, game_name)
+        return await self._reply(appid, game_name)
 
+    @rpc
     async def set_profile(self, ids: list, name: str, settings: dict, appid: int = 0, game_name: str = "") -> dict:
         """Create or change the profile matching ids."""
         clean = _settings(settings)
         if not _valid_ids(ids) or not isinstance(name, str) or clean is None:
-            self.error = "Invalid settings were rejected."
-            return await self.get_state(appid, game_name)
+            self.error = INVALID
+            return await self._reply(appid, game_name)
         return await self._change(
             lambda data: lsfg_config.set_profile(data, name.strip()[:128] or ids[0], ids, clean),
             f"profile {ids}: {clean}", appid, game_name)
 
+    @rpc
     async def set_fp16(self, allowed: bool, appid: int = 0, game_name: str = "") -> dict:
         """lsfg-vk's global allow_fp16: half precision, much faster on AMD GPUs at the same quality."""
         if type(allowed) is not bool:
-            self.error = "Invalid settings were rejected."
-            return await self.get_state(appid, game_name)
+            self.error = INVALID
+            return await self._reply(appid, game_name)
         return await self._change(lambda data: data["global"].update(allow_fp16=allowed),
                                   f"allow_fp16 = {allowed}", appid, game_name)
 
+    @rpc
     async def remove_profile(self, ids: list, appid: int = 0, game_name: str = "") -> dict:
         """Keep lsfg-vk out of the game matching ids (the list's switch turned off)."""
         if not _valid_ids(ids):
-            self.error = "Invalid settings were rejected."
-            return await self.get_state(appid, game_name)
+            self.error = INVALID
+            return await self._reply(appid, game_name)
         return await self._change(lambda data: lsfg_config.remove_ids(data, ids), f"profile {ids}: removed",
                                   appid, game_name)
 
+    @rpc
     async def install_lsfg(self, appid: int = 0, name: str = "") -> dict:
         async with self.lock:
             home = _home()
             cli = lsfg_install.find_cli(home)
             if cli and not self.manifest.files:
                 self.error = "lsfg-vk is already installed by something else; DeckyLS uses that installation."
-                return await self.get_state(appid, name)
+                return await self._reply(appid, name)
             self.busy, self.error = "Downloading lsfg-vk…", ""
             try:
                 archive = await asyncio.to_thread(lsfg_install.download)
                 self.busy = "Installing lsfg-vk…"
-                written = await asyncio.to_thread(lsfg_install.install, archive, os.path.join(home, ".local"))
-                stale = [p for p in self.manifest.files if p not in written]
-                await asyncio.to_thread(lsfg_install.uninstall, stale)
-                self.manifest.save(lsfg_install.LSFG_VERSION, written)
+                files = await asyncio.to_thread(lsfg_install.plan, archive, os.path.join(home, ".local"))
+                # Recorded before the first write, so an interrupted install can still be finished or removed.
+                planned = list(dict.fromkeys(self.manifest.files + [path for path, _, _ in files]))
+                await asyncio.to_thread(self.manifest.save, self.manifest.version, planned)
+                written = await asyncio.to_thread(lsfg_install.install, files)
+                stale = await asyncio.to_thread(lsfg_install.uninstall, [p for p in planned if p not in written])
+                for path, reason in stale.items():
+                    decky.logger.warning(f"could not remove the old lsfg-vk file {path}: {reason}")
+                await asyncio.to_thread(self.manifest.save, lsfg_install.LSFG_VERSION, written + list(stale))
                 decky.logger.info(f"installed lsfg-vk {lsfg_install.LSFG_VERSION} ({len(written)} files)")
             except (lsfg_install.InstallError, OSError) as e:
                 self.error = str(e)
@@ -225,20 +254,33 @@ class Plugin:
             finally:
                 self.busy = ""
                 self.health = (None, None)
-        return await self.get_state(appid, name)
+        return await self._reply(appid, name)
 
+    @rpc
     async def remove_lsfg(self, appid: int = 0, name: str = "") -> dict:
         """Remove the lsfg-vk files DeckyLS installed. The config file stays: it is the user's settings."""
         async with self.lock:
-            await asyncio.to_thread(lsfg_install.uninstall, self.manifest.files)
-            decky.logger.info(f"removed lsfg-vk ({len(self.manifest.files)} files)")
-            self.manifest.clear()
-            self.error = ""
-            self.health = (None, None)
-        return await self.get_state(appid, name)
+            files = self.manifest.files
+            try:
+                failed = await asyncio.to_thread(lsfg_install.uninstall, files)
+                if failed:  # still recorded, so pressing the button again finishes the job
+                    await asyncio.to_thread(self.manifest.save, self.manifest.version, list(failed))
+                    path, reason = next(iter(failed.items()))
+                    self.error = f"Could not remove {len(failed)} lsfg-vk file(s), such as {path}: {reason}"
+                    decky.logger.error(self.error)
+                else:
+                    await asyncio.to_thread(self.manifest.clear)
+                    self.error = ""
+                    decky.logger.info(f"removed lsfg-vk ({len(files)} files)")
+            except OSError as e:
+                self.error = f"Could not remove lsfg-vk: {e}"
+                decky.logger.error(self.error)
+            finally:
+                self.health = (None, None)
+        return await self._reply(appid, name)
 
     async def _unload(self):
-        pass
+        pass  # nothing runs in the background; a call still in to_thread ends by its own timeout
 
     async def _uninstall(self):
         # Decky runs this on every plugin update too (uninstall + install), so lsfg-vk stays; "Remove lsfg-vk"

@@ -43,10 +43,10 @@ class MainTest(unittest.TestCase):
         path = lambda *p: os.path.join(local, *p)  # noqa: E731
         try:
             with mock.patch.object(main.lsfg_install, "download", return_value=old):
-                self.assertEqual(asyncio.run(self.plugin.install_lsfg())["error"], "")
+                self.assertTrue(asyncio.run(self.plugin.install_lsfg())["ok"])
             self.assertTrue(os.path.exists(path("lib", "only-in-v1.so")))
             with mock.patch.object(main.lsfg_install, "download", return_value=new):
-                self.assertEqual(asyncio.run(self.plugin.install_lsfg())["error"], "", "an update of our own install")
+                self.assertTrue(asyncio.run(self.plugin.install_lsfg())["ok"], "an update of our own install")
             self.assertFalse(os.path.exists(path("lib", "only-in-v1.so")), "files the new release dropped go")
             for name in ("only-in-v2.so", "liblsfg-vk-layer.so"):
                 self.assertTrue(os.path.exists(path("lib", name)), name)
@@ -58,6 +58,63 @@ class MainTest(unittest.TestCase):
             self.assertFalse(self.plugin.manifest.files)
         finally:
             os.remove(other)
+
+    def test_files_that_cannot_be_removed_are_reported_and_stay_recorded(self):
+        local = os.path.join(main._home(), ".local")
+        with mock.patch.object(main.lsfg_install, "download", return_value=archive(
+                ("./bin/lsfg-vk-cli", "cli"), ("./lib/liblsfg-vk-layer.so", "so"))):
+            self.assertTrue(asyncio.run(self.plugin.install_lsfg())["ok"])
+        cli = os.path.join(local, "bin", "lsfg-vk-cli")
+        real_remove = os.remove
+
+        def refuse_cli(path):
+            if path == cli:
+                raise PermissionError(13, "Permission denied", path)
+            real_remove(path)
+
+        with mock.patch.object(main.lsfg_install.os, "remove", side_effect=refuse_cli):
+            result = asyncio.run(self.plugin.remove_lsfg())
+        self.assertFalse(result["ok"])
+        self.assertIn("Permission denied", result["error"])
+        self.assertTrue(result["state"]["managed"], "the panel still offers Remove")
+        self.assertEqual(main.lsfg_install.Manifest(self.plugin.manifest.path).files, [cli])
+        self.assertTrue(asyncio.run(self.plugin.remove_lsfg())["ok"], "pressed again, it finishes")
+        self.assertFalse(os.path.exists(cli))
+        self.assertFalse(self.plugin.manifest.files)
+
+    def test_an_interrupted_install_still_knows_every_file_it_may_have_written(self):
+        local = os.path.join(main._home(), ".local")
+        real_write = main.lsfg_install.dk_fs.write_atomic
+        written = []
+
+        def full_after_one(path, data, mode=None, **options):  # the disk fills up after the first lsfg-vk file
+            if path.startswith(local):
+                if written:
+                    raise OSError(28, "No space left on device")
+                written.append(path)
+            real_write(path, data, mode, **options)
+
+        with mock.patch.object(main.lsfg_install, "download", return_value=archive(
+                ("./bin/lsfg-vk-cli", "cli"), ("./lib/liblsfg-vk-layer.so", "so"))), \
+                mock.patch.object(main.lsfg_install.dk_fs, "write_atomic", side_effect=full_after_one):
+            result = asyncio.run(self.plugin.install_lsfg())
+        self.assertFalse(result["ok"])
+        self.assertIn("No space left", result["error"])
+        recorded = main.lsfg_install.Manifest(self.plugin.manifest.path).files
+        self.assertEqual(sorted(os.path.relpath(p, local).replace("\\", "/") for p in recorded),
+                         ["bin/lsfg-vk-cli", "lib/liblsfg-vk-layer.so"], "recorded before the first write")
+        self.assertTrue(result["state"]["managed"])
+        self.assertTrue(asyncio.run(self.plugin.remove_lsfg())["ok"])
+        self.assertFalse(os.path.exists(written[0]), "what was written can be removed from the panel")
+
+    def test_an_unexpected_failure_answers_instead_of_raising(self):
+        with mock.patch.object(main.lsfg_games, "installed", side_effect=RuntimeError("library gone")), \
+                self.assertLogs(main.decky.logger, "ERROR"):
+            result = asyncio.run(self.plugin.get_state())
+        self.assertFalse(result["ok"])
+        self.assertIn("RuntimeError", result["error"])
+        self.assertNotIn("library gone", result["error"], "details go to the log, not the panel")
+        self.assertNotIn("state", result)
 
     def test_healthcheck_and_journal_are_not_redone_on_every_poll(self):
         cli = os.path.join(main._home(), "lsfg-vk-cli")
@@ -86,7 +143,7 @@ class MainTest(unittest.TestCase):
             journal.return_value = joined
             with mock.patch.object(main.time, "monotonic", return_value=main.time.monotonic() + 11):
                 for _ in range(3):
-                    state = asyncio.run(self.plugin.get_state(1809540, "Nine Sols"))
+                    state = asyncio.run(self.plugin.get_state(1809540, "Nine Sols"))["state"]
             self.assertEqual(journal.call_count, 2)
             self.assertEqual(state["game"]["attached"], {"profile": "Nine Sols", "via": "Steam App ID"})
             game["started"] = 2000.0  # the game was restarted: a new session is looked up
@@ -95,14 +152,18 @@ class MainTest(unittest.TestCase):
         os.remove(cli)
 
     def test_a_name_toml_cannot_hold_is_reported_not_raised(self):
-        state = self.call(["1"], "Lone \ud800 surrogate", settings())
-        self.assertIn("encode", state["error"], "shown in the panel, not an unhandled exception")
+        result = self.call(["1"], "Lone \ud800 surrogate", settings())
+        self.assertFalse(result["ok"])
+        self.assertIn("encode", result["error"], "an answer for the panel, not an unhandled exception")
+        self.assertEqual(result["state"]["error"], result["error"], "and it stays on screen")
         folder = os.path.dirname(self.plugin.config_path)
         self.assertEqual(os.listdir(folder) if os.path.isdir(folder) else [], [], "nothing half-written")
 
     def test_running_game_gets_a_profile_and_its_state(self):
         state = self.call(["1809540"], "Nine Sols", settings(multiplier=8, flow_scale=0.8,
                                                              preserve_swapchain_image_count=True), appid=1809540)
+        self.assertTrue(state["ok"])
+        state = state["state"]
         self.assertEqual(state["error"], "")
         self.assertEqual(state["game"]["settings"]["multiplier"], 8)
         self.assertEqual(state["game"]["ids"], ["1809540"])
@@ -123,21 +184,24 @@ class MainTest(unittest.TestCase):
         self.assertFalse(os.path.exists(self.plugin.config_path))
 
     def test_fp16_is_a_global_switch_that_keeps_the_profiles(self):
-        self.assertTrue(asyncio.run(self.plugin.get_state())["allow_fp16"], "lsfg-vk's default is on")
+        self.assertTrue(asyncio.run(self.plugin.get_state())["state"]["allow_fp16"], "lsfg-vk's default is on")
         self.call(["1"], "x", settings())
-        state = asyncio.run(self.plugin.set_fp16(False))
+        state = asyncio.run(self.plugin.set_fp16(False))["state"]
         self.assertFalse(state["allow_fp16"])
         self.assertEqual(self.saved()["global"], {"allow_fp16": False})
         self.assertEqual(self.saved()["profile"][0]["name"], "x")
 
     def test_list_switch_prepares_and_removes_a_game_without_touching_the_running_one(self):
         self.call(["1145360"], "Hades", settings(multiplier=1), appid=1809540, game_name="Nine Sols")
-        state = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))
+        result = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))
+        self.assertTrue(result["ok"])
+        state = result["state"]
         self.assertEqual((state["error"], state["game"]["name"]), ("", "Nine Sols"))
         self.assertEqual(self.saved()["profile"], [lsfg_config.PLACEHOLDER])
         self.assertFalse(any(e["name"] == lsfg_config.PLACEHOLDER["name"] for e in state["games"]))
         bad = asyncio.run(self.plugin.remove_profile("1145360", 0, ""))
-        self.assertEqual(bad["error"], "Invalid settings were rejected.")
+        self.assertEqual((bad["ok"], bad["error"]), (False, "Invalid settings were rejected."))
+        self.assertEqual(bad["state"]["error"], bad["error"], "a refused change still answers with the state")
 
     def test_library_has_every_game_with_its_settings_and_unmatched_profiles(self):
         data = {"version": 2, "global": {}, "profile": [

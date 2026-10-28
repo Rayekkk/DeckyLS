@@ -64,11 +64,14 @@ def _binary_vdf(data, i=0):
     return out, i
 
 
+def _shortcut_files(home):
+    return glob.glob(os.path.join(home, ".local", "share", "Steam", "userdata", "*", "config", "shortcuts.vdf"))
+
+
 def shortcut_games(home):
     """Non-Steam shortcuts of every Steam user on the device."""
     games = {}
-    pattern = os.path.join(home, ".local", "share", "Steam", "userdata", "*", "config", "shortcuts.vdf")
-    for path in glob.glob(pattern):
+    for path in _shortcut_files(home):
         try:
             with open(path, "rb") as f:
                 root, _ = _binary_vdf(f.read())
@@ -88,5 +91,25 @@ def shortcut_games(home):
     return list(games.values())
 
 
+def _stamp(home):
+    """What changes when a game is installed, removed or added as a shortcut: the mtime of every library's
+    steamapps folder (app manifests are added and deleted there) and of every shortcuts.vdf."""
+    paths = [os.path.join(library, "steamapps") for library in lsfg_status.steam_libraries(home)]
+    stamp = []
+    for path in paths + sorted(_shortcut_files(home)):
+        try:
+            stamp.append((path, os.stat(path).st_mtime_ns))
+        except OSError:
+            stamp.append((path, None))
+    return tuple(stamp)
+
+
+_cache = {}  # home -> (stamp, games)
+
+
 def installed(home):
-    return steam_games(home) + shortcut_games(home)
+    """Every installed game; read again only when the stamp changes, as the panel asks every 5 s."""
+    stamp = _stamp(home)
+    if home not in _cache or _cache[home][0] != stamp:
+        _cache[home] = (stamp, steam_games(home) + shortcut_games(home))
+    return _cache[home][1]

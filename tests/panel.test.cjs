@@ -1,75 +1,27 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Execute the actual TSX with controlled hooks, RPC completion and timers (same approach as FSR4 Injector).
-const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+// The panel's real TSX with controlled hooks, RPC calls and timers (DeckyKit's frontend_harness.cjs).
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '..'), ts = require(path.join(root, 'node_modules/typescript'));
-const settle = async () => { for (let i = 0; i < 24; i++) await Promise.resolve(); };
+const { harness, all, find, settle } = require('./frontend_harness.cjs');
 
-function harness(runningApp) {
-  const slots = [], effects = new Map(), pending = [], calls = [], timers = [], intervals = [];
-  let cursor = 0;
-  const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => v === b[i]);
-  const hooks = {
-    useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = typeof value === 'function' ? value() : value;
-      return [slots[i], v => { slots[i] = typeof v === 'function' ? v(slots[i]) : v; }]; },
-    useCallback(fn, deps) { const i = cursor++; if (!slots[i] || !same(slots[i].deps, deps)) slots[i] = { fn, deps }; return slots[i].fn; },
-    useEffect(fn, deps) { const i = cursor++, old = effects.get(i); if (!old || !same(old.deps, deps)) pending.push(() => {
-      old?.cleanup?.(); effects.set(i, { deps, cleanup: fn() });
-    }); },
-  };
-  const el = (type, props) => (typeof type === 'function' && !['Note'].includes(type.name) ? type(props) : { type, props });
-  const jsx = { jsx: el, jsxs: el, Fragment: 'Fragment' };
-  // Arguments are copied out of the sandbox, whose objects have their own Object prototype.
-  const callable = name => (...args) => new Promise((resolve, reject) =>
-    calls.push({ name, args: JSON.parse(JSON.stringify(args)), resolve, reject, settled: false }));
+/** The panel with runningApp as Steam's running game; answers are given as states and sent as { ok, state }. */
+function panel(runningApp) {
   const steam = [];  // what the panel asked Steam to open, in order
-  const Navigation = { CloseSideMenus: () => steam.push('close menus'), Navigate: p => steam.push(`navigate ${p}`) };
-  const ui = new Proxy({ Router: { get MainRunningApp() { return runningApp; } }, Navigation },
-    { get: (o, k) => (k in o ? o[k] : k) });
   // Steam app types: 1 game, 4 tool (Ubisoft Connect Services, Proton...); apps not listed have no overview.
   const appTypes = { 1145360: 1, 1809540: 1, 4099820: 4, 1493710: 4 };
-  const appStore = { GetAppOverviewByAppID: id => (id in appTypes ? { app_type: appTypes[id] } : null) };
-  const SteamClient = { URL: { ExecuteSteamURL: url => steam.push(`url ${url}`) } };
-  const source = fs.readFileSync(path.join(root, 'src', 'index.tsx'), 'utf8') + '\nexport { Content };';
-  const output = ts.transpileModule(source, { compilerOptions: {
-    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const mod = { exports: {} };
-  vm.runInNewContext(output, {
-    module: mod, exports: mod.exports, console, appStore, SteamClient,
-    setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
-    clearTimeout: t => { if (t) t.done = true; }, setInterval: fn => intervals.push(fn), clearInterval() {},
-    require(name) {
-      if (name === 'react') return hooks;
-      if (name === 'react/jsx-runtime') return jsx;
-      if (name === '@decky/api') return { callable, definePlugin: fn => fn };
-      if (name === '@decky/ui') return ui;
-      throw Error(name);
+  const h = harness({
+    ui: {
+      Router: { get MainRunningApp() { return runningApp; } },
+      Navigation: { CloseSideMenus: () => steam.push('close menus'), Navigate: p => steam.push(`navigate ${p}`) },
     },
+    globals: {
+      appStore: { GetAppOverviewByAppID: id => (id in appTypes ? { app_type: appTypes[id] } : null) },
+      SteamClient: { URL: { ExecuteSteamURL: url => steam.push(`url ${url}`) } },
+    },
+    keep: ['Note'],
   });
-  const render = () => { cursor = 0; const tree = mod.exports.Content({}); pending.splice(0).forEach(fn => fn()); return tree; };
-  return {
-    render, calls, timers, steam,
-    tick() { intervals.forEach(fn => fn()); },  // the 5 s poll
-    unmount() { for (const e of effects.values()) e.cleanup?.(); effects.clear(); },  // the menu closes
-    remount() { this.unmount(); slots.length = 0; return render(); },  // closed and opened again
-    respond(name, value) {
-      const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
-      call.settled = true; call.resolve(value); return call;
-    },
-    fail(name) {
-      const call = calls.find(c => c.name === name && !c.settled); assert.ok(call, `pending ${name}`);
-      call.settled = true; call.reject(new Error('backend gone')); return call;
-    },
-    fire() { timers.filter(t => !t.done).forEach(t => { t.done = true; t.fn(); }); },
-  };
+  return { ...h, steam, answer: h.respond, respond: (name, state) => h.respond(name, { ok: true, state }) };
 }
-
-function all(node, out = []) {
-  if (Array.isArray(node)) node.forEach(n => all(n, out));
-  else if (node && typeof node === 'object') { out.push(node); all(node.props?.children, out); }
-  return out;
-}
-const find = (tree, type, label) => all(tree).find(n => n.type === type && (label === undefined || n.props.label === label));
 
 const base = {
   version: '0.1.0', pinned: '2.0.0', lsfg: { ok: true, text: '', version: '2.0.0' }, managed: true,
@@ -80,10 +32,10 @@ const Q = { override_present_mode: true, preserve_swapchain_image_count: false }
 const game = (settings = null, attached = null) => ({ ...base, game: {
   appid: 1809540, name: 'Nine Sols', ids: ['1809540'], running: true, settings, attached } });
 
-(async () => {
+test('frontend panel', async () => {
   // A running game without a profile: off; picking 2x saves the defaults for its ids at once.
   {
-    const h = harness({ appid: '1809540', display_name: 'Nine Sols' });
+    const h = panel({ appid: '1809540', display_name: 'Nine Sols' });
     h.render();
     assert.deepEqual(h.calls[0].args, [1809540, 'Nine Sols']);
     h.respond('get_state', game());
@@ -106,7 +58,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
 
   // Slider steps are saved once, after the user stops moving it; attached status names how lsfg-vk found the game.
   {
-    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
     const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 3, flow_scale: 1, performance_mode: true, ...Q };
     h.respond('get_state', game(on, { profile: 'Nine Sols', via: 'Steam App ID' }));
@@ -123,7 +75,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
 
   // Closing the menu while the slider is still settling sends the change instead of dropping it.
   {
-    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
     const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q };
     h.respond('get_state', game(on, { profile: 'Nine Sols', via: 'Steam App ID' }));
@@ -138,7 +90,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
   // A save the backend rejects does not leave the unsaved value on screen; the real state is fetched instead.
   // An answer to an older change of a game never wipes a newer one still on its way.
   {
-    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
     const two = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q };
     h.respond('get_state', game(two, { profile: 'Nine Sols', via: 'Steam App ID' }));
@@ -159,7 +111,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
 
   // A poll that started before a change cannot put the old value back, and polls never stack up.
   {
-    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
     const two = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 1, performance_mode: true, ...Q };
     h.respond('get_state', game(two, { profile: 'Nine Sols', via: 'Steam App ID' }));
@@ -184,7 +136,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
 
   // Multipliers up to 8x; compatibility options are folded away and keep every other setting; FP16 is global.
   {
-    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
     const on = { name: 'Nine Sols', ids: ['1809540'], multiplier: 2, flow_scale: 0.8, performance_mode: false, ...Q };
     h.respond('get_state', game(on, { profile: 'Nine Sols', via: 'Steam App ID' }));
@@ -208,7 +160,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
   // Games list: collapsed at first; expanded it is alphabetical without the running game. A switch turned on
   // prepares the game at 1× (the multiplier is chosen in the game), turned off it removes the game's profile.
   {
-    const h = harness({ appid: 1809540, display_name: 'Nine Sols' });
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
     h.render();
     const tuned = { name: 'Hades', ids: ['1145360'], multiplier: 3, flow_scale: 0.7, performance_mode: false, ...Q };
     const listed = { ...game(), games: [
@@ -245,7 +197,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
 
   // No game: a hint, the games list, and the install button when lsfg-vk is missing.
   {
-    const h = harness(undefined);
+    const h = panel(undefined);
     h.render();
     assert.deepEqual(h.calls[0].args, [0, '']);
     h.respond('get_state', { ...base, lsfg: null, managed: false, lossless_scaling: { installed: true, dll: '' },
@@ -267,7 +219,7 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
 
   // Lossless Scaling not installed: its store page is one press away.
   {
-    const h = harness(undefined);
+    const h = panel(undefined);
     h.render();
     h.respond('get_state', { ...base, lossless_scaling: { installed: false, dll: '' } });
     await settle();
@@ -276,5 +228,39 @@ const game = (settings = null, attached = null) => ({ ...base, game: {
     all(tree).find(n => n.type === 'ButtonItem' && n.props.children === 'Open in the Steam Store').props.onClick();
     assert.deepEqual(h.steam, ['close menus', 'url steam://store/993090']);
   }
-  console.log('frontend panel: ok');
-})().catch(e => { console.error(e); process.exit(1); });
+
+  // The first state cannot be read: the reason replaces the spinner, and the next poll still tries again.
+  {
+    const h = panel(undefined);
+    h.render();
+    h.answer('get_state', { ok: false, error: 'Unexpected error: library gone. Details are in the Decky log.' });
+    await settle();
+    let tree = h.render();
+    const note = all(tree).find(n => n.type?.name === 'Note');
+    assert.match([].concat(note.props.children).join(''), /could not read its state: Unexpected error: library gone/);
+    assert.equal(find(tree, 'Spinner'), undefined);
+    h.tick();
+    h.fail('get_state');  // the backend is gone altogether
+    await settle();
+    assert.match([].concat(all(h.render()).find(n => n.type?.name === 'Note').props.children).join(''), /backend gone/);
+    h.tick();
+    h.respond('get_state', base);
+    await settle();
+    tree = h.render();
+    assert.ok(find(tree, 'Field', 'No game running'), 'a later poll that works shows the panel');
+    assert.equal(all(tree).find(n => n.type?.name === 'Note'), undefined);
+  }
+
+  // A refused change answers with the state, whose error stays on screen.
+  {
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    h.respond('get_state', game());
+    await settle();
+    find(h.render(), 'ToggleField', 'Half precision (FP16)').props.onChange(false);
+    h.answer('set_fp16', { ok: false, error: 'No.', state: { ...game(), error: 'No.' } });
+    await settle();
+    assert.ok(all(h.render()).some(n => n.type?.name === 'Note' && n.props.children === 'No.'));
+    assert.ok(!h.calls.some(c => c.name === 'get_state' && !c.settled), 'the answer had the state, nothing to ask');
+  }
+});

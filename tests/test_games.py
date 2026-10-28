@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
+import os
 import pathlib
 import struct
 import tempfile
 import unittest
+from unittest import mock
 
 import _harness  # noqa: F401
 import lsfg_games as g
@@ -58,6 +60,23 @@ class GamesTest(unittest.TestCase):
         self.assertEqual(sorted(g.shortcut_games(self.home), key=lambda x: x["appid"]), [
             {"appid": 0x80000001, "name": "Game", "exe": "Game.EXE"},
             {"appid": 0x80000002, "name": "Emulator", "exe": ""}])
+
+    def test_library_is_read_again_only_when_a_game_or_shortcut_comes_or_goes(self):
+        apps = self.steam / "steamapps"
+        (apps / "appmanifest_1809540.acf").write_text(manifest(1809540, "Nine Sols"), encoding="utf-8")
+        self.assertEqual([x["name"] for x in g.installed(self.home)], ["Nine Sols"])
+        with mock.patch.object(g, "steam_games", wraps=g.steam_games) as scan:
+            g.installed(self.home)
+            self.assertEqual(scan.call_count, 0, "the 5 s poll does not scan the libraries")
+            (apps / "appmanifest_1145360.acf").write_text(manifest(1145360, "Hades"), encoding="utf-8")
+            os.utime(apps, ns=(0, os.stat(apps).st_mtime_ns + 10 ** 9))
+            self.assertEqual(sorted(x["name"] for x in g.installed(self.home)), ["Hades", "Nine Sols"])
+            config = self.steam / "userdata/123/config"
+            config.mkdir(parents=True)
+            (config / "shortcuts.vdf").write_bytes(b"\x00shortcuts\0" + kv({
+                "0": {"appid": 0x80000001, "AppName": "Game", "Exe": "Game.exe"}}) + b"\x08\x08")
+            self.assertIn("Game", [x["name"] for x in g.installed(self.home)], "a new shortcut is seen")
+            self.assertEqual(scan.call_count, 2)
 
     def test_unreadable_shortcuts_are_skipped(self):
         config = self.steam / "userdata/123/config"

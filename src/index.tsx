@@ -7,6 +7,7 @@ import {
   staticClasses, ToggleField,
 } from "@decky/ui";
 import { FC, useCallback, useEffect, useState } from "react";
+import { Result, settle } from "./result";
 
 // lsfg-vk profile keys, exactly as the backend accepts them.
 interface Settings {
@@ -37,13 +38,14 @@ interface State {
   } | null;
 }
 
+// Every method answers with the panel's state; a refused change also sets state.error, shown until the next one.
 type GameArgs = [appid: number, name: string];
-const getState = callable<GameArgs, State>("get_state");
-const setProfile = callable<[string[], string, Settings, ...GameArgs], State>("set_profile");
-const removeProfile = callable<[string[], ...GameArgs], State>("remove_profile");
-const setFp16 = callable<[boolean, ...GameArgs], State>("set_fp16");
-const installLsfg = callable<GameArgs, State>("install_lsfg");
-const removeLsfg = callable<GameArgs, State>("remove_lsfg");
+const getState = callable<GameArgs, Result<State>>("get_state");
+const setProfile = callable<[string[], string, Settings, ...GameArgs], Result<State>>("set_profile");
+const removeProfile = callable<[string[], ...GameArgs], Result<State>>("remove_profile");
+const setFp16 = callable<[boolean, ...GameArgs], Result<State>>("set_fp16");
+const installLsfg = callable<GameArgs, Result<State>>("install_lsfg");
+const removeLsfg = callable<GameArgs, Result<State>>("remove_lsfg");
 
 // A new game's settings: lsfg-vk's own defaults, except performance mode, which suits handheld GPUs.
 const DEFAULTS: Settings = {
@@ -60,8 +62,6 @@ const REFRESH_MS = 5000;
 // Alphabetical as people read it in the Steam client's language: case and accents do not split the list.
 const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
-declare const appStore: any;
-declare const SteamClient: any;
 const LOSSLESS_SCALING = 993090;
 // Steam's app types worth listing: game, application, demo, non-Steam shortcut. Tools (Proton, runtimes,
 // redistributables, launcher services such as Ubisoft Connect Services) are left out.
@@ -113,6 +113,7 @@ let polling = false;  // a slow poll is not stacked with the next one
 
 const Content: FC = () => {
   const [state, setState] = useState<State | null>(null);
+  const [loadError, setLoadError] = useState("");  // why the first state could not be read; polling retries
   // Unsaved changes per game (ids joined), shown at once; null = the game's switch was turned off.
   const [draft, setDraft] = useState<Record<string, Settings | null>>({});
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -124,8 +125,11 @@ const Content: FC = () => {
     if (polling && !first) return;
     polling = true;
     const seq = changeSeq;
-    getState(...runningGame()).then(s => { if (seq === changeSeq) setState(s); }, () => {})
-      .finally(() => { polling = false; });
+    settle(getState(...runningGame())).then(r => {
+      if (seq !== changeSeq) return;
+      if (r.state) setState(r.state);
+      setLoadError(r.state ? "" : r.error ?? "");  // a failed poll keeps the last state on screen
+    }).finally(() => { polling = false; });
   }, []);
   useEffect(() => {
     refresh(true);
@@ -145,9 +149,10 @@ const Content: FC = () => {
     const send = () => {
       delete pendingSaves[key];
       changeSeq++;
-      (next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
+      // A failed save shows the real state again, not the unsaved value.
+      settle(next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
         : removeProfile(profile.ids, ...runningGame()))
-        .then(setState, () => refresh(true))  // a failed save shows the real state again, not the unsaved value
+        .then(r => (r.state ? setState(r.state) : refresh(true)))
         .finally(() => setDraft(d => {
           if (d[key] !== next) return d;  // a newer change of this game is still on its way
           const { [key]: _, ...rest } = d;
@@ -158,13 +163,18 @@ const Content: FC = () => {
     pendingSaves[key] = { timer: setTimeout(send, delay), send };
   }, [refresh]);
 
-  const run = useCallback((action: (...a: GameArgs) => Promise<State>) => {
+  const run = useCallback((action: (...a: GameArgs) => Promise<Result<State>>) => {
     changeSeq++;
     setState(s => s && { ...s, busy: "Working…" });
-    action(...runningGame()).then(setState, () => refresh());
+    settle(action(...runningGame())).then(r => (r.state ? setState(r.state) : refresh()));
   }, [refresh]);
 
-  if (!state) return <PanelSection><PanelSectionRow><Spinner /></PanelSectionRow></PanelSection>;
+  if (!state) return (
+    <PanelSection>
+      {loadError ? <Note tone="error">DeckyLS could not read its state: {loadError}</Note>
+        : <PanelSectionRow><Spinner /></PanelSectionRow>}
+    </PanelSection>
+  );
 
   const installed = state.lsfg !== null;
   const ls = state.lossless_scaling;

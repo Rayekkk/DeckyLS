@@ -7,6 +7,9 @@ appid=$1 name=$2 D=$(dirname "$0")
 bash "$D/busy.sh" "$appid" || exit 1
 conf=~/.config/lsfg-vk/conf.toml backup=/tmp/deckyls-compat-backup.toml
 cp "$conf" "$backup"
+# Put the user's file back however the script ends: finished, failed or interrupted (Ctrl+C, lost SSH).
+trap 'cp "$backup" "$conf" && echo "config restored"' EXIT
+trap 'exit 130' INT TERM HUP
 q() { CDP_TARGET=QuickAccess_uid2 python3 -I "$D/cdp.py" "$@"; }
 bash "$D/stop_game.sh" "$appid"
 bash "$D/lscall.sh" set_profile "[\"$appid\"]" "\"$name\"" '{"multiplier": 3, "flow_scale": 0.8, "performance_mode": true, "override_present_mode": true, "preserve_swapchain_image_count": true}' 0 '""' >/dev/null
@@ -25,5 +28,3 @@ sleep 1
 q shot /tmp/ls-compat.png 0 0 375 695 >/dev/null
 python3 -I "$D/cdp.py" eval "DFL.Navigation.CloseSideMenus(), 1" >/dev/null
 bash "$D/stop_game.sh" "$appid"
-cp "$backup" "$conf"
-echo "config restored"
