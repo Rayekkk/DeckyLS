@@ -90,7 +90,7 @@ def uninstall(files):
         except FileNotFoundError:
             pass  # already gone, which is what removing it was for
         except OSError as e:
-            failed[path] = e.strerror or str(e)
+            failed[path] = dk_fs.shown(e)
     return failed
 
 
@@ -109,7 +109,7 @@ class Manifest:
         try:
             loaded = dk_fs.load_json(path, validate=_valid_manifest)
         except OSError as e:  # unreadable for now (permissions, I/O): nothing is touched, nothing is assumed
-            loaded = dk_fs.Loaded(None, "lost", e.strerror or type(e).__name__)
+            loaded = dk_fs.Loaded(None, "lost", dk_fs.shown(e))
         if loaded.status == "lost":
             self.problem = f"DeckyLS's list of installed lsfg-vk files cannot be read ({loaded.detail})."
         data = loaded.value or {"version": "", "files": []}

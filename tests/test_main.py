@@ -187,10 +187,13 @@ class MainTest(unittest.TestCase):
         with self.assertLogs(main.decky.logger, "WARNING") as logged:
             for value in bad:
                 self.assertEqual(self.call(["1"], "x", value)["error"], "Invalid settings were rejected.", value)
-        self.assertEqual(len(logged.output), len(bad), "every refusal is in the log")
+        self.assertEqual(logged.output, ["WARNING:decky-test:set_profile refused: Invalid settings were rejected."],
+                         "a refusal is in the log, the same one in a row only once")
         for ids, name in (([], "x"), ([1], "x"), ("1", "x"), (["1"], None)):
             self.assertEqual(self.call(ids, name, settings())["error"], "Invalid settings were rejected.", ids)
-        self.assertEqual(asyncio.run(self.plugin.set_fp16("no"))["error"], "Invalid settings were rejected.")
+        with self.assertLogs(main.decky.logger, "WARNING") as logged:
+            self.assertEqual(asyncio.run(self.plugin.set_fp16("no"))["error"], "Invalid settings were rejected.")
+        self.assertEqual(len(logged.output), 1)
         self.assertFalse(os.path.exists(self.plugin.config_path))
 
     def test_fp16_is_a_global_switch_that_keeps_the_profiles(self):
@@ -234,6 +237,39 @@ class MainTest(unittest.TestCase):
         self.assertEqual(main._ids(1809540, "NineSols.exe"), ["1809540"])
         self.assertEqual(main._ids(0x80000001, "Game.exe"), [str(0x80000001), "Game.exe"])
         self.assertEqual(main._ids(0x80000001, ""), [str(0x80000001)])
+
+    def test_updates_go_through_the_shared_updater(self):
+        u = self.plugin.updates
+        self.assertEqual((u.repo, u.folder, u.plugin_name, u.package_name, u.current, u.flags),
+                         ("Rayekkk/DeckyLS", "DeckyLS", "DeckyLS", "deckyls", main.VERSION, []),
+                         "a release asking for root is never offered")
+        # Every module main.py imports: a release without one would install and then fail to start.
+        self.assertTrue({"main.py", "dist/index.js", "lsfg_config.py", "lsfg_games.py", "lsfg_install.py",
+                         "lsfg_status.py", "dk_fs.py", "dk_net.py", "dk_process.py", "dk_rpc.py",
+                         "dk_update.py"} <= set(u.required))
+        with mock.patch.object(u, "check", return_value={"ok": True, "update_available": False}) as c:
+            self.assertTrue(asyncio.run(self.plugin.check_for_updates())["ok"])
+        c.assert_called_once_with(True)
+        with mock.patch.object(u, "download", return_value={"ok": False, "error": "x"}) as d:
+            self.assertEqual(asyncio.run(self.plugin.perform_update("9.9.9")), {"ok": False, "error": "x"})
+        d.assert_called_once_with("9.9.9")
+        self.assertEqual(asyncio.run(self.plugin.get_state())["state"]["home"], main._home())
+
+    def test_a_plugin_that_fails_to_start_can_still_check_for_updates(self):
+        plugin = main.Plugin()
+        with mock.patch.object(main.lsfg_install, "Manifest", side_effect=RuntimeError("broken")):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(plugin._main())
+        with mock.patch.object(plugin.updates, "check", return_value={"ok": True, "update_available": False}):
+            self.assertTrue(asyncio.run(plugin.check_for_updates())["ok"])
+
+    def test_unload_before_start_does_nothing(self):
+        asyncio.run(main.Plugin()._unload())
+
+    def test_unload_stops_the_updater(self):
+        asyncio.run(self.plugin._unload())
+        # Refused before any network request.
+        self.assertEqual(asyncio.run(self.plugin.perform_update("9.9.9")), {"ok": False, "error": main.dk_update.CANCELLED})
 
 
 if __name__ == "__main__":

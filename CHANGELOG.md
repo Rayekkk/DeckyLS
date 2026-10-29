@@ -4,6 +4,23 @@ All notable changes to DeckyLS, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **DeckyLS updates:** a new **About** page (last row of the panel) shows the version, author, license and
+  credits for lsfg-vk and Lossless Scaling, and at the bottom **Check for updates**. A newer DeckyLS release can be
+  downloaded to your Downloads folder (checked against GitHub's size and SHA-256 first) and installed from Decky
+  settings → Developer → Install plugin from ZIP. DeckyLS never checks on its own.
+
+### Changed
+
+- **Remove lsfg-vk** now asks in a dialog ("Remove lsfg-vk?") instead of needing a second press, and says when it
+  is done. Installing, updating and removing lsfg-vk stay on the main page, in a new **lsfg-vk** section.
+- **Panel:** if DeckyLS cannot start, the menu says "DeckyLS unavailable" with a **Try again** button, and DeckyLS
+  can still be updated from there. If the panel loses contact for a moment, the last values stay with a
+  "Last read … ago · Retrying…" note.
+- **Panel:** a change that cannot be saved now also shows a notification, besides the message in the panel.
+  Colors follow the other plugins.
+
 ### Fixed
 
 - **Panel:** when DeckyLS cannot read its state, the menu shows why instead of a loading spinner that never ends,

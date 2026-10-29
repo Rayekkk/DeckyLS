@@ -106,6 +106,13 @@ class InstallTest(unittest.TestCase):
         reloaded.clear()
         self.assertEqual(i.Manifest(manifest.path).files, [])
 
+    def test_a_file_that_cannot_be_removed_is_reported_without_its_path(self):
+        path = os.path.join(self.prefix, "bin", "lsfg-vk-cli")
+        error = OSError(None, None, path)  # no strerror; str(error) names the path
+        self.assertIn("lsfg-vk-cli'", str(error))
+        with mock.patch.object(i.os, "remove", side_effect=error):
+            self.assertEqual(i.uninstall([path]), {path: "OSError"})
+
 
 if __name__ == "__main__":
     unittest.main()

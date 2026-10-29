@@ -20,7 +20,9 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
+import dk_fs  # noqa: E402
 import dk_rpc  # noqa: E402
+import dk_update  # noqa: E402
 import lsfg_config  # noqa: E402
 import lsfg_games  # noqa: E402
 import lsfg_install  # noqa: E402
@@ -39,14 +41,10 @@ LSFG_DEFAULTS = {"multiplier": 2, "flow_scale": 1.0, "performance_mode": False, 
 SWITCHES = ("performance_mode", "override_present_mode", "preserve_swapchain_image_count")
 SHORTCUT_BIT = 0x80000000  # non-Steam shortcuts have the top bit of their app id set
 INVALID = "Invalid settings were rejected."
+REPOSITORY = "Rayekkk/DeckyLS"
 
 _ready = asyncio.Event()
-rpc = dk_rpc.boundary(decky.logger, _ready)
-
-
-def _reason(e):
-    """An error's text for the panel: an OSError's own text names its file, with the user's name in the path."""
-    return (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
+rpc = dk_rpc.boundary(decky.logger, _ready, log_fails=True)  # a refused change is logged as a warning
 
 
 def _home():
@@ -105,6 +103,12 @@ def _library(games, data):
 class Plugin:
     async def _main(self):
         try:
+            # First, so a plugin that fails to start can still fetch the release that fixes it.
+            self.updates = dk_update.Updates(
+                repo=REPOSITORY, folder="DeckyLS", plugin_name="DeckyLS", package_name="deckyls", current=VERSION,
+                home=_home(), required=(*dk_update.REQUIRED, "lsfg_config.py", "lsfg_games.py", "lsfg_install.py",
+                                        "lsfg_status.py", "dk_fs.py", "dk_net.py", "dk_process.py", "dk_rpc.py",
+                                        "dk_update.py"), flags=[], logger=decky.logger)
             self.lock = asyncio.Lock()
             self.busy = ""
             self.error = ""  # the last failed change, shown in the panel until the next change succeeds
@@ -144,6 +148,7 @@ class Plugin:
         health = await self._healthcheck(home)
         state = {
             "version": VERSION,
+            "home": home,  # the panel shows a downloaded update's path as ~/…
             "pinned": lsfg_install.LSFG_VERSION,
             "lsfg": health,
             "managed": bool(self.manifest.files),
@@ -184,9 +189,8 @@ class Plugin:
         return dk_rpc.fail(self.error, state) if self.error else dk_rpc.ok(state)
 
     async def _refuse(self, why, appid, name):
-        """A change refused before it started: the reason stays in the panel and goes to the log."""
+        """A change refused before it started: the reason stays in the panel (rpc logs the refusal)."""
         self.error = why
-        decky.logger.warning(f"refused: {why}")
         return await self._reply(appid, name)
 
     @rpc
@@ -203,7 +207,7 @@ class Plugin:
                 self.error = ""
                 decky.logger.info(what)
             except (lsfg_config.ConfigError, OSError, ValueError) as e:  # ValueError: a text TOML cannot hold
-                self.error = f"Could not save lsfg-vk's config file: {_reason(e)}" if isinstance(e, OSError) else str(e)
+                self.error = f"Could not save lsfg-vk's config file: {dk_fs.shown(e)}" if isinstance(e, OSError) else str(e)
                 decky.logger.error(f"saving the lsfg-vk config failed: {e}")
         return await self._reply(appid, game_name)
 
@@ -256,7 +260,7 @@ class Plugin:
                 await asyncio.to_thread(self.manifest.save, lsfg_install.LSFG_VERSION, written + list(stale))
                 decky.logger.info(f"installed lsfg-vk {lsfg_install.LSFG_VERSION} ({len(written)} files)")
             except (lsfg_install.InstallError, OSError) as e:
-                self.error = f"Could not install lsfg-vk: {_reason(e)}" if isinstance(e, OSError) else str(e)
+                self.error = f"Could not install lsfg-vk: {dk_fs.shown(e)}" if isinstance(e, OSError) else str(e)
                 decky.logger.error(f"installing lsfg-vk failed: {e}")
             finally:
                 self.busy = ""
@@ -281,14 +285,28 @@ class Plugin:
                     self.error = ""
                     decky.logger.info(f"removed lsfg-vk ({len(files)} files)")
             except OSError as e:
-                self.error = f"Could not remove lsfg-vk: {_reason(e)}"
+                self.error = f"Could not remove lsfg-vk: {dk_fs.shown(e)}"
                 decky.logger.error(f"removing lsfg-vk failed: {e}")
             finally:
                 self.health = (None, None)
         return await self._reply(appid, name)
 
+    @rpc
+    async def check_for_updates(self) -> dict:
+        """DeckyLS's own latest release on GitHub (dk_update answer, D2)."""
+        return await asyncio.to_thread(self.updates.check, True)
+
+    @rpc
+    async def perform_update(self, expected_version: str) -> dict:
+        """Save the release the user saw to Downloads; the user installs it from Decky."""
+        return await asyncio.to_thread(self.updates.download, expected_version)
+
     async def _unload(self):
-        pass  # nothing runs in the background; a call still in to_thread ends by its own timeout
+        # Nothing else runs in the background; a call still in to_thread ends by its own timeout. close() never
+        # waits for the network.
+        updates = getattr(self, "updates", None)
+        if updates is not None:
+            updates.close()
 
     async def _uninstall(self):
         # Decky runs this on every plugin update too (uninstall + install), so lsfg-vk stays; "Remove lsfg-vk"

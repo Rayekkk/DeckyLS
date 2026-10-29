@@ -40,7 +40,7 @@ def load(path):
     except FileNotFoundError:
         return {"version": VERSION, "global": {}, "profile": []}
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
-        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else e
+        reason = dk_fs.shown(e)
         raise ConfigError(f"{SHOWN} cannot be read ({reason}). Fix or delete it; DeckyLS will not overwrite it.") from e
     if data.get("version") != VERSION:
         raise ConfigError(f"{SHOWN} is not an lsfg-vk 2 configuration (version = {data.get('version')!r}). "

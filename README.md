@@ -60,14 +60,16 @@ Tested on a Legion Go 2 (SteamOS, Decky Loader 3.3) with Nine Sols under Proton 
 
 ### Updating
 
-Install the newer ZIP the same way. lsfg-vk and your game settings stay as they are. When a release
-comes with a newer lsfg-vk, **About** offers **Update lsfg-vk to …**.
+**About → Check for updates** (the last row of the panel) finds a newer DeckyLS release and downloads its ZIP to
+your Downloads folder, checked against GitHub's size and SHA-256; install it the same way as above. lsfg-vk and your
+game settings stay as they are. When a release comes with a newer lsfg-vk, the **lsfg-vk** section offers
+**Update lsfg-vk to …**.
 
 <a href="docs/screenshots/about.png"><img src="docs/screenshots/about.png" alt="About: lsfg-vk health check and Remove lsfg-vk" width="360"></a>
 
 ### Uninstalling
 
-Press **About → Remove lsfg-vk** first, then uninstall DeckyLS in Decky. Decky handles an update as
+Press **Remove lsfg-vk** (in the **lsfg-vk** section) and confirm first, then uninstall DeckyLS in Decky. Decky handles an update as
 uninstall plus install, so the plugin never removes lsfg-vk on its own. Your game settings stay in
 `~/.config/lsfg-vk/conf.toml`; delete that folder too for a full cleanup.
 
@@ -110,7 +112,7 @@ follows fast motion better. **Performance mode** uses a lighter model that suits
 | "Also installed: …" | Another plugin manages lsfg-vk too (Decky LSFG-VK, MAKO). Keep only one; uninstall the other |
 | "lsfg-vk is already installed by something else" | DeckyLS uses that installation. Remove it with the tool that installed it if you want DeckyLS to manage lsfg-vk |
 | "…conf.toml cannot be read…" | Fix or delete `~/.config/lsfg-vk/conf.toml`; DeckyLS never overwrites a file it cannot read. Your earlier file is in `conf.toml.bak-deckyls` |
-| **About** shows a health-check report instead of **Healthy** | Follow what it says; it comes from lsfg-vk's own `lsfg-vk-cli healthcheck` |
+| The **lsfg-vk** section shows a health-check report instead of **Healthy** | Follow what it says; it comes from lsfg-vk's own `lsfg-vk-cli healthcheck` |
 | Ghosting or wobbly edges | Raise **Flow scale**, turn off **Performance mode**, or raise the base frame rate |
 | The game crashes or freezes with frame generation | Open **Compatibility options**, turn on **Keep the game's buffer count** and restart the game |
 | The game stutters or misbehaves only with frame generation | Try **Compatibility options → Force V-Sync** off and restart the game; turn it back on if frame pacing gets uneven |

@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Rayekkk
 
-import { callable, definePlugin } from "@decky/api";
+import { callable, definePlugin, useQuickAccessVisible } from "@decky/api";
 import {
-  ButtonItem, DropdownItem, Field, Navigation, PanelSection, PanelSectionRow, Router, SliderField, Spinner,
-  staticClasses, ToggleField,
+  DropdownItem, Field, Navigation, PanelSection, PanelSectionRow, Router, SliderField, staticClasses,
+  ToggleField,
 } from "@decky/ui";
 import { FC, ReactNode, useCallback, useEffect, useState } from "react";
-import { Result, settle, toastError } from "./result";
+import { AboutPage, UpdateCheck, UpdateController, UpdateDownload, UpdateSection } from "./about";
+import { Result } from "./result";
+import {
+  ActionButton, colors, confirmAction, infoRow, notify, PageHeader, PageShell, SectionLink, staleNote, statusPlaceholder,
+} from "./ui";
+import { createWriteQueue } from "./writeQueue";
 
 // lsfg-vk profile keys, exactly as the backend accepts them.
 interface Settings {
@@ -20,6 +25,7 @@ interface Entry { appid: number; name: string; ids: string[]; settings: Profile 
 
 interface State {
   version: string;
+  home: string;
   pinned: string;
   lsfg: { ok: boolean; text: string; version: string } | null;
   managed: boolean;
@@ -46,6 +52,8 @@ const removeProfile = callable<[string[], ...GameArgs], Result<State>>("remove_p
 const setFp16 = callable<[boolean, ...GameArgs], Result<State>>("set_fp16");
 const installLsfg = callable<GameArgs, Result<State>>("install_lsfg");
 const removeLsfg = callable<GameArgs, Result<State>>("remove_lsfg");
+const checkUpdates = callable<[], UpdateCheck>("check_for_updates");
+const performUpdate = callable<[string], UpdateDownload>("perform_update");
 
 // A new game's settings: lsfg-vk's own defaults, except performance mode, which suits handheld GPUs.
 const DEFAULTS: Settings = {
@@ -86,12 +94,12 @@ const runningGame = (): GameArgs => {
   return app ? [Number(app.appid), String(app.display_name ?? "")] : [0, ""];
 };
 
-const Note: FC<{ tone: "error" | "warn"; children: ReactNode }> = ({ tone, children }) => (
+// The page's one message area (UI.md §5): setup problems and the last failed change, until the next one succeeds.
+const Note: FC<{ tone: "error" | "warning"; children: ReactNode }> = ({ tone, children }) => (
   <PanelSectionRow>
-    <div style={{
-      padding: "8px", borderRadius: "4px", overflowWrap: "anywhere", fontSize: "12px",
-      background: tone === "error" ? "rgba(248,113,113,.14)" : "rgba(250,204,21,.12)",
-      color: tone === "error" ? "var(--gpColor-Red, #f87171)" : "var(--gpColor-Yellow, #facc15)",
+    <div role={tone === "error" ? "alert" : "status"} style={{
+      padding: "8px", borderRadius: "4px", overflowWrap: "anywhere", fontSize: "12px", color: colors[tone],
+      background: tone === "error" ? colors.errorSurface : colors.warningSurface,
     }}>{children}</div>
   </PanelSectionRow>
 );
@@ -104,86 +112,97 @@ function status(game: NonNullable<State["game"]>): string {
   return "Restart the game to start frame generation. lsfg-vk joins a game when it starts; OpenGL games are not supported.";
 }
 
-// One pending save per game, so a slider still settling never swallows a switch flipped on another game.
-// Closing the menu sends what is still pending instead of dropping it.
-const pendingSaves: Record<string, { timer: ReturnType<typeof setTimeout>; send: () => void }> = {};
-// Bumped by every change: a poll that started before the latest change answers with an outdated state.
-let changeSeq = 0;
-let polling = false;  // a slow poll is not stacked with the next one
+const ABOUT_ICON = <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10h.01" /></>;
 
-const Content: FC = () => {
-  const [state, setState] = useState<State | null>(null);
-  const [loadError, setLoadError] = useState("");  // why the first state could not be read; polling retries
+// Every change takes one road (STANDARD §3): one write at a time, the latest unsent value per game, and a poll that
+// started before a change is dropped. It outlives the panel, so a reopened one never overtakes a change still on its
+// way. A failed change is a toast as well as the state's error, shown until the next one succeeds.
+const queue = createWriteQueue<State>(() => getState(...runningGame()), {
+  onError: r => notify("DeckyLS", r.state ? r.error || "The change was not saved."
+    : `The change was not saved: ${(r.error || "no answer").replace(/\.$/, "")}.`),
+});
+
+const Content: FC<{ updates?: UpdateController }> = ({ updates }) => {
+  const [view, setView] = useState(queue.get());
+  // What this opening has read: the state of a panel closed earlier (perhaps another game's) is not shown until then.
+  const [opened, setOpened] = useState<"" | "failed" | "read">("");
   // Unsaved changes per game (ids joined), shown at once; null = the game's switch was turned off.
   const [draft, setDraft] = useState<Record<string, Settings | null>>({});
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const [showGames, setShowGames] = useState(false);
   const [showCompat, setShowCompat] = useState(false);
+  const [page, setPage] = useState<"about" | null>(null);
+  const [left, setLeft] = useState(false);  // About was just closed: its row takes the D-pad back
+  const visible = useQuickAccessVisible();
 
-  // first: a panel just opened always asks, even if the poll of a panel closed a moment ago is still running.
-  const refresh = useCallback((first = false) => {
-    if (polling && !first) return;
-    polling = true;
-    const seq = changeSeq;
-    settle(getState(...runningGame())).then(r => {
-      if (seq !== changeSeq) return;
-      if (r.state) setState(r.state);
-      setLoadError(r.state ? "" : r.error ?? "");  // a failed poll keeps the last state on screen
-    }).finally(() => { polling = false; });
-  }, []);
-  // Decky unmounts the panel when the Quick Access Menu closes (checked on Decky 3.3.1), which ends the polling.
   useEffect(() => {
-    refresh(true);
-    const timer = setInterval(() => refresh(), REFRESH_MS);
+    setView(queue.get());
+    return queue.subscribe(() => setView(queue.get()));
+  }, []);
+  const refresh = useCallback(() => queue.read().then(() => {
+    const now = queue.get();
+    setOpened(o => o === "read" || (now.state && !now.error) ? "read" : "failed");
+  }), []);
+  // Decky unmounts the panel when the Quick Access Menu closes (checked on Decky 3.3.1), which ends the polling;
+  // a change still waiting for its slider to settle is sent then instead of dropped.
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), REFRESH_MS);
     return () => {
       clearInterval(timer);
-      for (const pending of Object.values(pendingSaves)) {
-        clearTimeout(pending.timer);
-        pending.send();
-      }
+      void queue.flush();
     };
   }, [refresh]);
 
-  // An answer with the state shows it (a refusal's error is in it); one without, such as a dead backend, shows the
-  // error as a toast and reads the state again, so the panel never quietly shows the old value.
-  const showAnswer = useCallback((r: Result<State>) => {
-    if (r.state) return setState(r.state);
-    toastError(r, "DeckyLS: the change was not saved");
-    refresh(true);
-  }, [refresh]);
-
+  // A change answered without a state, such as by a dead backend, reads the state again, so the panel never quietly
+  // shows the old value.
   const save = useCallback((profile: { name: string; ids: string[] }, next: Settings | null, delay = 0) => {
     const key = profile.ids.join("\n");
     setDraft(d => ({ ...d, [key]: next }));
-    const send = () => {
-      delete pendingSaves[key];
-      changeSeq++;
-      // A failed save shows the real state again, not the unsaved value.
-      settle(next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
-        : removeProfile(profile.ids, ...runningGame()))
-        .then(showAnswer)
-        .finally(() => setDraft(d => {
-          if (d[key] !== next) return d;  // a newer change of this game is still on its way
-          const { [key]: _, ...rest } = d;
-          return rest;
-        }));
-    };
-    clearTimeout(pendingSaves[key]?.timer);
-    pendingSaves[key] = { timer: setTimeout(send, delay), send };
-  }, [showAnswer]);
+    void queue.write(key, () => next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
+      : removeProfile(profile.ids, ...runningGame()), { delayMs: delay }).then(r => {
+      if (!r.state) void refresh();
+      setDraft(d => {  // a failed save shows the real state again, not the unsaved value
+        if (d[key] !== next) return d;  // a newer change of this game is still on its way
+        const { [key]: _, ...rest } = d;
+        return rest;
+      });
+    });
+  }, [refresh]);
 
-  const run = useCallback((action: (...a: GameArgs) => Promise<Result<State>>) => {
-    changeSeq++;
-    setState(s => s && { ...s, busy: "Working…" });
-    settle(action(...runningGame())).then(showAnswer);
-  }, [showAnswer]);
+  // done: the toast of a change that worked.
+  const run = useCallback((action: (...a: GameArgs) => Promise<Result<State>>, done?: string, key?: string) => {
+    void queue.write(key, () => action(...runningGame()), { patch: { busy: "Working…" } }).then(r => {
+      if (r.ok && done) notify("DeckyLS", done);
+      if (!r.state) void refresh();
+    });
+  }, [refresh]);
 
+  const state = opened === "read" ? view.state : null;
   if (!state) return (
-    <PanelSection>
-      {loadError ? <Note tone="error">DeckyLS could not read its state: {loadError}</Note>
-        : <PanelSectionRow><Spinner /></PanelSectionRow>}
-    </PanelSection>
+    <>
+      {statusPlaceholder({ label: "DeckyLS unavailable", error: opened && view.error, onRetry: () => void refresh() })}
+      {/* A plugin that does not start can still fetch the release that fixes it. */}
+      {opened === "failed" && updates &&
+        <UpdateSection controller={updates} version={__PLUGIN_VERSION__} home={view.state?.home ?? ""} />}
+    </>
   );
+
+  if (page === "about") {
+    const close = () => { setLeft(true); setPage(null); };
+    return (
+      <PageShell onBack={close}>
+        <PageHeader title="About" back="DeckyLS" onBack={close} focus={visible} />
+        <AboutPage name="DeckyLS" version={state.version} license="BSD-3-Clause" source="github.com/Rayekkk/DeckyLS"
+          description="Lossless Scaling frame generation for the game you are playing: one menu, no launch options."
+          notes="Copyright (c) 2026 Rayekkk. Not affiliated with or endorsed by PancakeTAS, THS or Valve."
+          credits={[
+            ["lsfg-vk", "By PancakeTAS · CC BY-NC-ND 4.0. DeckyLS downloads the unmodified official build."],
+            ["Lossless Scaling", "By THS. Bought in Steam; frame generation uses its files."],
+          ]}
+          updates={updates} home={state.home} />
+      </PageShell>
+    );
+  }
 
   const installed = state.lsfg !== null;
   const ls = state.lossless_scaling;
@@ -193,39 +212,41 @@ const Content: FC = () => {
 
   return (
     <>
+      {view.error && <PanelSection>{infoRow(staleNote(Date.now() - view.readAt), view.error)}</PanelSection>}
+
       {(!installed || !ls.dll || state.error || state.config_error || state.rivals.length > 0) && (
         <PanelSection title="Setup">
           {!installed && (
             <PanelSectionRow>
-              <ButtonItem layout="below" disabled={!!state.busy} onClick={() => run(installLsfg)}
+              <ActionButton disabled={!!state.busy} onClick={() => run(installLsfg)}
                 description="Downloads the official lsfg-vk build from builds.lsfg-vk.dev and installs it in ~/.local.">
                 {state.busy || `Install lsfg-vk ${state.pinned}`}
-              </ButtonItem>
+              </ActionButton>
             </PanelSectionRow>
           )}
           {!ls.installed && (
             <>
-              <Note tone="warn">Install Lossless Scaling from Steam. Frame generation uses its files, so it must be bought and installed.</Note>
+              <Note tone="warning">Install Lossless Scaling from Steam. Frame generation uses its files, so it must be bought and installed.</Note>
               <PanelSectionRow>
-                <ButtonItem layout="below"
+                <ActionButton
                   onClick={() => openInSteam(() => SteamClient.URL.ExecuteSteamURL(`steam://store/${LOSSLESS_SCALING}`))}>
                   Open in the Steam Store
-                </ButtonItem>
+                </ActionButton>
               </PanelSectionRow>
             </>
           )}
           {ls.installed && !ls.dll && (
             <>
-              <Note tone="warn">In Steam, open Lossless Scaling → Properties → Betas and choose "lsfg-vk", then let it update.</Note>
+              <Note tone="warning">In Steam, open Lossless Scaling → Properties → Betas and choose "lsfg-vk", then let it update.</Note>
               <PanelSectionRow>
-                <ButtonItem layout="below" description="Then press the gear icon → Properties → Betas."
+                <ActionButton description="Then press the gear icon → Properties → Betas."
                   onClick={() => openInSteam(() => Navigation.Navigate(`/library/app/${LOSSLESS_SCALING}`))}>
                   Open Lossless Scaling in the library
-                </ButtonItem>
+                </ActionButton>
               </PanelSectionRow>
             </>
           )}
-          {state.rivals.length > 0 && <Note tone="warn">Also installed: {state.rivals.join(", ")}. Use only one plugin to manage lsfg-vk.</Note>}
+          {state.rivals.length > 0 && <Note tone="warning">Also installed: {state.rivals.join(", ")}. Use only one plugin to manage lsfg-vk.</Note>}
           {state.config_error && <Note tone="error">{state.config_error}</Note>}
           {state.error && <Note tone="error">{state.error}</Note>}
         </PanelSection>
@@ -271,10 +292,10 @@ const Content: FC = () => {
               </PanelSectionRow>
               {saved && (
                 <PanelSectionRow>
-                  <ButtonItem layout="below" onClick={() => setShowCompat(v => !v)}
+                  <ActionButton onClick={() => setShowCompat(v => !v)}
                     description={showCompat ? undefined : "Only if this game has problems with frame generation."}>
                     {showCompat ? "Hide compatibility options" : "Compatibility options"}
-                  </ButtonItem>
+                  </ActionButton>
                 </PanelSectionRow>
               )}
               {saved && showCompat && (
@@ -291,7 +312,7 @@ const Content: FC = () => {
                       onChange={v => save(profile, { ...s, preserve_swapchain_image_count: v })} />
                   </PanelSectionRow>
                   <PanelSectionRow>
-                    <div style={{ fontSize: "12px", color: "var(--gpSystemLighterGrey, #b8bcbf)" }}>
+                    <div style={{ fontSize: "12px", color: colors.muted }}>
                       These two apply the next time the game starts.
                     </div>
                   </PanelSectionRow>
@@ -305,11 +326,11 @@ const Content: FC = () => {
       {others.length > 0 && (
         <PanelSection title="Games">
           <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => setShowGames(v => !v)}
+            <ActionButton onClick={() => setShowGames(v => !v)}
               description={showGames ? undefined
                 : "Turn a game on before you start it; while it runs, choose its multiplier above."}>
               {showGames ? "Hide games" : `Show games (${others.filter(e => e.settings).length} on)`}
-            </ButtonItem>
+            </ActionButton>
           </PanelSectionRow>
           {showGames && others.map(e => {
             const key = e.ids.join("\n");
@@ -330,35 +351,35 @@ const Content: FC = () => {
           <ToggleField label="Half precision (FP16)" disabled={!installed || !!state.config_error}
             checked={state.allow_fp16}
             description="Faster on AMD graphics, such as the Steam Deck, Legion Go and ROG Ally, with the same image. Turn off only on an old NVIDIA GTX 10 card. Applies the next time a game starts."
-            onChange={v => run((...g) => setFp16(v, ...g))} />
+            onChange={v => run((...g) => setFp16(v, ...g), undefined, "fp16")} />
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection title="About">
-        <PanelSectionRow>
-          <Field focusable label="lsfg-vk" description={!installed ? "Not installed."
-            : `${state.lsfg!.version || "unknown version"}${state.managed ? "" : " (installed by something else)"}. `
-              + (state.lsfg!.ok ? "Healthy." : state.lsfg!.text)} />
-        </PanelSectionRow>
+      <PanelSection title="lsfg-vk">
+        {infoRow(installed ? `Version ${state.lsfg!.version || "—"}` : "Not installed", installed
+          ? `${state.managed ? "" : "Installed by something else. "}${state.lsfg!.ok ? "Healthy." : state.lsfg!.text}`
+          : undefined)}
         {state.managed && state.managed_version !== state.pinned && (
           <PanelSectionRow>
-            <ButtonItem layout="below" disabled={!!state.busy} onClick={() => run(installLsfg)}>
+            <ActionButton disabled={!!state.busy} onClick={() => run(installLsfg)}>
               {state.busy || `Update lsfg-vk to ${state.pinned}`}
-            </ButtonItem>
+            </ActionButton>
           </PanelSectionRow>
         )}
         {state.managed && (
           <PanelSectionRow>
-            <ButtonItem layout="below" disabled={!!state.busy}
-              description={confirmRemove ? "Press again to remove. Your game settings stay." : undefined}
-              onClick={() => { if (!confirmRemove) return setConfirmRemove(true); setConfirmRemove(false); run(removeLsfg); }}>
-              {confirmRemove ? "Confirm: remove lsfg-vk" : "Remove lsfg-vk"}
-            </ButtonItem>
+            <ActionButton disabled={!!state.busy} onClick={() => confirmAction("Remove lsfg-vk?",
+              "DeckyLS deletes the lsfg-vk files it installed, so frame generation stops until you install it again. Your game settings stay.",
+              "Remove", () => run(removeLsfg, "lsfg-vk was removed. Your game settings stay."), { destructive: true })}>
+              Remove lsfg-vk
+            </ActionButton>
           </PanelSectionRow>
         )}
-        <PanelSectionRow>
-          <Field focusable label="DeckyLS" description={`Version ${state.version}. Uses lsfg-vk by PancakeTAS and Lossless Scaling by THS; not affiliated with either.`} />
-        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection>
+        <SectionLink title="About" icon={ABOUT_ICON} focus={left && visible} onOpen={() => setPage("about")}
+          description={`Version ${state.version} · updates`} />
       </PanelSection>
     </>
   );
@@ -373,9 +394,17 @@ const LsIcon = () => (
   </svg>
 );
 
-export default definePlugin(() => ({
-  name: "DeckyLS",
-  titleView: <div className={staticClasses.Title}>DeckyLS</div>,
-  content: <Content />,
-  icon: <LsIcon />,
-}));
+export default definePlugin(() => {
+  // The updater belongs to the plugin, not the panel: closing the menu keeps a check or download going.
+  const updates = new UpdateController({ check: checkUpdates, download: performUpdate }, "deckyls");
+  return {
+    name: "DeckyLS",
+    titleView: <div className={staticClasses.Title}>DeckyLS</div>,
+    content: <Content updates={updates} />,
+    icon: <LsIcon />,
+    onDismount: () => {
+      updates.dispose();
+      queue.dispose();
+    },
+  };
+});
