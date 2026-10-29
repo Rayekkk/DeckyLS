@@ -27,7 +27,7 @@ def steam_games(home):
                 with open(path, encoding="utf-8", errors="replace") as f:
                     text = f.read(65536)
             except OSError:
-                continue
+                continue  # removed or unreadable while listed: that game is left out of the list
             fields = {}
             for key, value in _FIELD.findall(text):
                 fields.setdefault(key, _unescape(value))  # the app's own keys come before nested sections
@@ -76,7 +76,7 @@ def shortcut_games(home):
             with open(path, "rb") as f:
                 root, _ = _binary_vdf(f.read())
         except (OSError, ValueError, struct.error):
-            continue
+            continue  # unreadable or damaged: that user's shortcuts are left out, the other games still show
         shortcuts = next((v for k, v in root.items() if k.lower() == "shortcuts"), {})
         for entry in shortcuts.values() if isinstance(shortcuts, dict) else ():
             if not isinstance(entry, dict):

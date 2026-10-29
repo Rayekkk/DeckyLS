@@ -27,8 +27,5 @@ tests/_settings/
 .DS_Store
 Thumbs.db
 
-# Shim build output (bin/amdxc64.dll is the shipped copy)
-shim/build/
-
 # Release zips and their .sha256 (scripts/package.mjs)
 artifacts/

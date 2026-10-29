@@ -68,6 +68,20 @@ class InstallTest(unittest.TestCase):
                 i.download()
         self.assertEqual(i.dk_net.check_url(i.URL, i.HOSTS), i.URL, "the pinned URL passes dk_net's own checks")
 
+    def test_errors_for_the_panel_name_no_path(self):
+        path = os.path.join(self.prefix, "installed.json")
+        with mock.patch.object(i.dk_fs, "load_json", side_effect=PermissionError(13, "Permission denied", path)):
+            self.assertEqual(i.Manifest(path).problem,
+                             "DeckyLS's list of installed lsfg-vk files cannot be read (Permission denied).")
+        cli = os.path.join(self.prefix, "bin", "lsfg-vk-cli")
+        for error, text in ((i.subprocess.TimeoutExpired([cli, "healthcheck"], 20), "did not answer within 20 s."),
+                            (PermissionError(13, "Permission denied", cli), "could not run: Permission denied")):
+            with mock.patch.object(i.dk_process, "run", side_effect=error):
+                result = i.healthcheck(cli)
+            self.assertFalse(result["ok"])
+            self.assertTrue(result["text"].endswith(text), result["text"])
+            self.assertNotIn(self.prefix, result["text"])
+
     def test_an_unreadable_list_of_installed_files_is_reported_not_guessed(self):
         path = os.path.join(self.prefix, "installed.json")
         pathlib.Path(path).write_text('{"version": "2.0.0", "files": [1')

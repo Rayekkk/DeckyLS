@@ -263,4 +263,25 @@ test('frontend panel', async () => {
     assert.ok(all(h.render()).some(n => n.type?.name === 'Note' && n.props.children === 'No.'));
     assert.ok(!h.calls.some(c => c.name === 'get_state' && !c.settled), 'the answer had the state, nothing to ask');
   }
+
+  // A change that fails without a state (the backend is gone) says so in a toast and shows the real state again.
+  {
+    const h = panel({ appid: 1809540, display_name: 'Nine Sols' });
+    h.render();
+    h.respond('get_state', game());
+    await settle();
+    find(h.render(), 'DropdownItem', 'Frame generation').props.onChange({ data: 3 });
+    h.fire();
+    h.fail('set_profile');
+    await settle();
+    assert.deepEqual(h.toasts.map(t => [t.title, t.body]), [['DeckyLS: the change was not saved', 'backend gone']]);
+    h.respond('get_state', game());
+    await settle();
+    assert.equal(find(h.render(), 'DropdownItem', 'Frame generation').props.selectedOption, 1, 'not the unsaved 3×');
+    find(h.render(), 'ToggleField', 'Half precision (FP16)').props.onChange(false);
+    h.fail('set_fp16');
+    await settle();
+    assert.equal(h.toasts.length, 2, 'the same for the FP16 switch and the lsfg-vk buttons');
+  }
+
 });

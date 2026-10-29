@@ -75,7 +75,7 @@ class MainTest(unittest.TestCase):
         with mock.patch.object(main.lsfg_install.os, "remove", side_effect=refuse_cli):
             result = asyncio.run(self.plugin.remove_lsfg())
         self.assertFalse(result["ok"])
-        self.assertIn("Permission denied", result["error"])
+        self.assertEqual(result["error"], "Could not remove 1 lsfg-vk file(s), such as lsfg-vk-cli: Permission denied")
         self.assertTrue(result["state"]["managed"], "the panel still offers Remove")
         self.assertEqual(main.lsfg_install.Manifest(self.plugin.manifest.path).files, [cli])
         self.assertTrue(asyncio.run(self.plugin.remove_lsfg())["ok"], "pressed again, it finishes")
@@ -99,7 +99,7 @@ class MainTest(unittest.TestCase):
                 mock.patch.object(main.lsfg_install.dk_fs, "write_atomic", side_effect=full_after_one):
             result = asyncio.run(self.plugin.install_lsfg())
         self.assertFalse(result["ok"])
-        self.assertIn("No space left", result["error"])
+        self.assertEqual(result["error"], "Could not install lsfg-vk: No space left on device")
         recorded = main.lsfg_install.Manifest(self.plugin.manifest.path).files
         self.assertEqual(sorted(os.path.relpath(p, local).replace("\\", "/") for p in recorded),
                          ["bin/lsfg-vk-cli", "lib/liblsfg-vk-layer.so"], "recorded before the first write")
@@ -159,6 +159,14 @@ class MainTest(unittest.TestCase):
         folder = os.path.dirname(self.plugin.config_path)
         self.assertEqual(os.listdir(folder) if os.path.isdir(folder) else [], [], "nothing half-written")
 
+    def test_a_failed_save_names_no_path_in_the_panel_but_logs_it(self):
+        path = os.path.join(main._home(), ".config", "lsfg-vk", "conf.toml")
+        with mock.patch.object(main.lsfg_config.dk_fs, "write_atomic",
+                               side_effect=PermissionError(13, "Permission denied", path)),                 self.assertLogs(main.decky.logger, "ERROR") as logged:
+            result = self.call(["1"], "x", settings())
+        self.assertEqual(result["error"], "Could not save lsfg-vk's config file: Permission denied")
+        self.assertIn("conf.toml'", logged.output[0], "the full error, with the path, is in the log")
+
     def test_running_game_gets_a_profile_and_its_state(self):
         state = self.call(["1809540"], "Nine Sols", settings(multiplier=8, flow_scale=0.8,
                                                              preserve_swapchain_image_count=True), appid=1809540)
@@ -176,8 +184,10 @@ class MainTest(unittest.TestCase):
                settings(flow_scale=0.1), settings(flow_scale=float("nan")), settings(flow_scale=True),
                settings(performance_mode="yes"), settings(override_present_mode=1),
                settings(preserve_swapchain_image_count=None), settings(extra=1), {"multiplier": 2}, None]
-        for value in bad:
-            self.assertEqual(self.call(["1"], "x", value)["error"], "Invalid settings were rejected.", value)
+        with self.assertLogs(main.decky.logger, "WARNING") as logged:
+            for value in bad:
+                self.assertEqual(self.call(["1"], "x", value)["error"], "Invalid settings were rejected.", value)
+        self.assertEqual(len(logged.output), len(bad), "every refusal is in the log")
         for ids, name in (([], "x"), ([1], "x"), ("1", "x"), (["1"], None)):
             self.assertEqual(self.call(ids, name, settings())["error"], "Invalid settings were rejected.", ids)
         self.assertEqual(asyncio.run(self.plugin.set_fp16("no"))["error"], "Invalid settings were rejected.")

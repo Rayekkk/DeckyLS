@@ -12,12 +12,12 @@ import json
 import math
 import os
 import re
-import shutil
 import tomllib
 
 import dk_fs
 
 VERSION = 2
+SHOWN = "~/.config/lsfg-vk/conf.toml"  # how errors name the file: never its full path, which has the user's name
 BACKUP_SUFFIX = ".bak-deckyls"
 # lsfg-vk rejects a file without profiles; this one stands in for the last removed game and matches nothing.
 PLACEHOLDER = {"name": "DeckyLS: no game", "active_in": "deckyls-no-game", "multiplier": 1}
@@ -40,15 +40,16 @@ def load(path):
     except FileNotFoundError:
         return {"version": VERSION, "global": {}, "profile": []}
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
-        raise ConfigError(f"{path} cannot be read ({e}). Fix or delete it; DeckyLS will not overwrite it.") from e
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else e
+        raise ConfigError(f"{SHOWN} cannot be read ({reason}). Fix or delete it; DeckyLS will not overwrite it.") from e
     if data.get("version") != VERSION:
-        raise ConfigError(f"{path} is not an lsfg-vk 2 configuration (version = {data.get('version')!r}). "
+        raise ConfigError(f"{SHOWN} is not an lsfg-vk 2 configuration (version = {data.get('version')!r}). "
                           "Delete it or update it for lsfg-vk 2; DeckyLS will not overwrite it.")
     data.setdefault("global", {})
     data.setdefault("profile", [])
     if not isinstance(data["global"], dict) or not isinstance(data["profile"], list) \
             or not all(isinstance(p, dict) for p in data["profile"]):
-        raise ConfigError(f"{path} has an unexpected layout; DeckyLS will not overwrite it.")
+        raise ConfigError(f"{SHOWN} has an unexpected layout; DeckyLS will not overwrite it.")
     return data
 
 
@@ -139,5 +140,6 @@ def save(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     backup = path + BACKUP_SUFFIX
     if os.path.exists(path) and not os.path.exists(backup):
-        shutil.copy2(path, backup)
+        with open(path, "rb") as f:  # atomic: an interrupted copy never stands in for the user's file
+            dk_fs.write_atomic(backup, f)
     dk_fs.write_atomic(path, text)

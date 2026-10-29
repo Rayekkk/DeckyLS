@@ -88,7 +88,7 @@ def uninstall(files):
         try:
             os.remove(path)
         except FileNotFoundError:
-            pass
+            pass  # already gone, which is what removing it was for
         except OSError as e:
             failed[path] = e.strerror or str(e)
     return failed
@@ -109,7 +109,7 @@ class Manifest:
         try:
             loaded = dk_fs.load_json(path, validate=_valid_manifest)
         except OSError as e:  # unreadable for now (permissions, I/O): nothing is touched, nothing is assumed
-            loaded = dk_fs.Loaded(None, "lost", str(e))
+            loaded = dk_fs.Loaded(None, "lost", e.strerror or type(e).__name__)
         if loaded.status == "lost":
             self.problem = f"DeckyLS's list of installed lsfg-vk files cannot be read ({loaded.detail})."
         data = loaded.value or {"version": "", "files": []}
@@ -136,8 +136,11 @@ def healthcheck(cli):
     try:
         result = dk_process.run([cli, "healthcheck"], timeout=20, capture_output=True)
         text = (result.stdout + result.stderr).strip()
+    except subprocess.TimeoutExpired:  # its text has the program's full path, with the user's name in it
+        return {"ok": False, "text": "lsfg-vk-cli did not answer within 20 s.", "version": ""}
     except (OSError, subprocess.SubprocessError) as e:
-        return {"ok": False, "text": f"lsfg-vk-cli could not run: {e}", "version": ""}
+        reason = e.strerror if isinstance(e, OSError) and e.strerror else type(e).__name__
+        return {"ok": False, "text": f"lsfg-vk-cli could not run: {reason}", "version": ""}
     version = ""
     for line in text.splitlines():
         if line.startswith("Installed lsfg-vk-layer version:"):

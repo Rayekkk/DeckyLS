@@ -86,6 +86,13 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(c.ConfigError):
                 c.load(self.path)
 
+    def test_a_file_that_cannot_be_opened_is_named_without_its_full_path(self):
+        os.makedirs(self.path)  # a folder where the file should be: opening it fails with an OSError
+        with self.assertRaises(c.ConfigError) as caught:
+            c.load(self.path)
+        self.assertTrue(str(caught.exception).startswith("~/.config/lsfg-vk/conf.toml cannot be read ("))
+        self.assertNotIn(self.dir, str(caught.exception))
+
     def test_values_toml_cannot_round_trip_are_refused_before_writing(self):
         self.write(USER_FILE)
         data = c.load(self.path)

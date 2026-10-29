@@ -6,8 +6,8 @@ import {
   ButtonItem, DropdownItem, Field, Navigation, PanelSection, PanelSectionRow, Router, SliderField, Spinner,
   staticClasses, ToggleField,
 } from "@decky/ui";
-import { FC, useCallback, useEffect, useState } from "react";
-import { Result, settle } from "./result";
+import { FC, ReactNode, useCallback, useEffect, useState } from "react";
+import { Result, settle, toastError } from "./result";
 
 // lsfg-vk profile keys, exactly as the backend accepts them.
 interface Settings {
@@ -86,7 +86,7 @@ const runningGame = (): GameArgs => {
   return app ? [Number(app.appid), String(app.display_name ?? "")] : [0, ""];
 };
 
-const Note: FC<{ tone: "error" | "warn"; children: any }> = ({ tone, children }) => (
+const Note: FC<{ tone: "error" | "warn"; children: ReactNode }> = ({ tone, children }) => (
   <PanelSectionRow>
     <div style={{
       padding: "8px", borderRadius: "4px", overflowWrap: "anywhere", fontSize: "12px",
@@ -131,6 +131,7 @@ const Content: FC = () => {
       setLoadError(r.state ? "" : r.error ?? "");  // a failed poll keeps the last state on screen
     }).finally(() => { polling = false; });
   }, []);
+  // Decky unmounts the panel when the Quick Access Menu closes (checked on Decky 3.3.1), which ends the polling.
   useEffect(() => {
     refresh(true);
     const timer = setInterval(() => refresh(), REFRESH_MS);
@@ -143,6 +144,14 @@ const Content: FC = () => {
     };
   }, [refresh]);
 
+  // An answer with the state shows it (a refusal's error is in it); one without, such as a dead backend, shows the
+  // error as a toast and reads the state again, so the panel never quietly shows the old value.
+  const showAnswer = useCallback((r: Result<State>) => {
+    if (r.state) return setState(r.state);
+    toastError(r, "DeckyLS: the change was not saved");
+    refresh(true);
+  }, [refresh]);
+
   const save = useCallback((profile: { name: string; ids: string[] }, next: Settings | null, delay = 0) => {
     const key = profile.ids.join("\n");
     setDraft(d => ({ ...d, [key]: next }));
@@ -152,7 +161,7 @@ const Content: FC = () => {
       // A failed save shows the real state again, not the unsaved value.
       settle(next ? setProfile(profile.ids, profile.name, pick(next), ...runningGame())
         : removeProfile(profile.ids, ...runningGame()))
-        .then(r => (r.state ? setState(r.state) : refresh(true)))
+        .then(showAnswer)
         .finally(() => setDraft(d => {
           if (d[key] !== next) return d;  // a newer change of this game is still on its way
           const { [key]: _, ...rest } = d;
@@ -161,13 +170,13 @@ const Content: FC = () => {
     };
     clearTimeout(pendingSaves[key]?.timer);
     pendingSaves[key] = { timer: setTimeout(send, delay), send };
-  }, [refresh]);
+  }, [showAnswer]);
 
   const run = useCallback((action: (...a: GameArgs) => Promise<Result<State>>) => {
     changeSeq++;
     setState(s => s && { ...s, busy: "Working…" });
-    settle(action(...runningGame())).then(r => (r.state ? setState(r.state) : refresh()));
-  }, [refresh]);
+    settle(action(...runningGame())).then(showAnswer);
+  }, [showAnswer]);
 
   if (!state) return (
     <PanelSection>

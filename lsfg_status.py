@@ -58,7 +58,7 @@ def find_game(appid, proc="/proc"):
                 continue
             return {"exe": _launched_exe(argv), "started": _started(os.path.dirname(path), proc)}
         except OSError:
-            continue
+            continue  # the process ended while being read
     return None
 
 
@@ -124,7 +124,7 @@ def rival_plugins(plugin_dir):
             with open(manifest, encoding="utf-8-sig") as f:
                 name = json.load(f).get("name", "")
         except (OSError, ValueError, AttributeError):
-            continue
+            continue  # a plugin without a readable manifest cannot be told apart, so it is not named
         if isinstance(name, str) and _RIVALS.search(name):
             found.append(name)
     _rivals[folder] = (stamp, found)

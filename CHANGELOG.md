@@ -12,6 +12,10 @@ All notable changes to DeckyLS, newest first.
   pressing the button again finishes the job.
 - **Install lsfg-vk:** an install cut short (full disk, plugin restarted) no longer forgets the files it already
   wrote; they can be removed from the panel or the install finished.
+- **Error messages:** the panel no longer shows full file paths (which contain your user name); the full error
+  is in the Decky log.
+- **Panel:** a change that cannot reach DeckyLS at all (for example while the plugin restarts) now says so in a
+  notification instead of quietly going back to the saved value.
 
 ### Changed
 

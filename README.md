@@ -171,7 +171,7 @@ file.
 <details>
 <summary><b>Build, test and package from source</b></summary>
 
-Requires Node.js 24 and Python 3.11 or newer.
+Requires Node.js 24 and Python 3.14.
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
@@ -212,21 +212,27 @@ or Valve.
 
 ## AI disclaimer
 
-This project was built with substantial help from an AI coding assistant. The research, the
-plugin, the tests and this documentation were written by Anthropic's Claude Code working under my
+This project was built with substantial help from an AI coding assistant. Most of the code,
+tests and documentation were written by an AI agent (Anthropic's Claude Code) working under my
 direction: I set the goal and the requirements (the official lsfg-vk only, unmodified; no launch
-options; nothing redistributed that may not be; a status that never pretends), made the decisions
-and chose what was released.
+options; nothing redistributed that may not be; a status that never pretends), made the design
+and safety decisions, reviewed the results and chose what was released.
 
 The AI was used to:
 
-- compare the existing Lossless Scaling plugins and find what lsfg-vk 2.0 makes possible;
-- verify on the device how lsfg-vk 2.0 picks profiles, reloads its config and logs;
-- write the Decky plugin, its tests and this documentation.
+- compare the existing Lossless Scaling plugins, find what lsfg-vk 2.0 makes possible and verify
+  on the device how it picks profiles, reloads its config and logs;
+- build the automated test suites (about 145 backend tests, run on Linux and Windows, and a test
+  of the panel);
+- audit the code for bugs, security issues and wasted work, with every finding checked by
+  independent review passes and, where possible, reproduced before it was fixed;
+- write the Decky plugin and this documentation.
 
-Nothing here is untested AI output. Every step was tested on my Legion Go 2 in Gaming Mode: the
+Nothing here is untested AI output. I tested the plugin on my Legion Go 2 in Gaming Mode: the
 install from the plugin, a game started with and without a profile, live changes in a running game
-and the status the panel shows.
+and the status the panel shows. Features were held back until they behaved correctly on the real
+device, and the pinned SHA-256 of the lsfg-vk download (nothing is installed when it does not match)
+was kept as a hard requirement.
 
-DeckyLS installs lsfg-vk into your home folder and edits its config file. It is provided as is,
-without warranty (see [License](#license)); use it at your own risk.
+Even so, this plugin installs lsfg-vk into your home folder and edits its config file. It is
+provided as is, without warranty (see [License](#license)); use it at your own risk.

@@ -44,6 +44,11 @@ _ready = asyncio.Event()
 rpc = dk_rpc.boundary(decky.logger, _ready)
 
 
+def _reason(e):
+    """An error's text for the panel: an OSError's own text names its file, with the user's name in the path."""
+    return (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
+
+
 def _home():
     return getattr(decky, "DECKY_USER_HOME", os.path.expanduser("~"))
 
@@ -107,7 +112,6 @@ class Plugin:
             self.health = (None, None)  # (cli path and its mtime, healthcheck result)
             self.joined = {}  # (appid, game start) -> {"attached": ..., "checked": monotonic time}
             self.config_path = lsfg_config.config_path(_home())
-            os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
             self.manifest = lsfg_install.Manifest(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "installed.json"))
             if self.manifest.problem:
                 self.error = self.manifest.problem
@@ -179,6 +183,12 @@ class Plugin:
         state = await self._state(appid, name)
         return dk_rpc.fail(self.error, state) if self.error else dk_rpc.ok(state)
 
+    async def _refuse(self, why, appid, name):
+        """A change refused before it started: the reason stays in the panel and goes to the log."""
+        self.error = why
+        decky.logger.warning(f"refused: {why}")
+        return await self._reply(appid, name)
+
     @rpc
     async def get_state(self, appid: int = 0, name: str = "") -> dict:
         return dk_rpc.ok(await self._state(appid, name))
@@ -193,7 +203,7 @@ class Plugin:
                 self.error = ""
                 decky.logger.info(what)
             except (lsfg_config.ConfigError, OSError, ValueError) as e:  # ValueError: a text TOML cannot hold
-                self.error = str(e)
+                self.error = f"Could not save lsfg-vk's config file: {_reason(e)}" if isinstance(e, OSError) else str(e)
                 decky.logger.error(f"saving the lsfg-vk config failed: {e}")
         return await self._reply(appid, game_name)
 
@@ -202,8 +212,7 @@ class Plugin:
         """Create or change the profile matching ids."""
         clean = _settings(settings)
         if not _valid_ids(ids) or not isinstance(name, str) or clean is None:
-            self.error = INVALID
-            return await self._reply(appid, game_name)
+            return await self._refuse(INVALID, appid, game_name)
         return await self._change(
             lambda data: lsfg_config.set_profile(data, name.strip()[:128] or ids[0], ids, clean),
             f"profile {ids}: {clean}", appid, game_name)
@@ -212,8 +221,7 @@ class Plugin:
     async def set_fp16(self, allowed: bool, appid: int = 0, game_name: str = "") -> dict:
         """lsfg-vk's global allow_fp16: half precision, much faster on AMD GPUs at the same quality."""
         if type(allowed) is not bool:
-            self.error = INVALID
-            return await self._reply(appid, game_name)
+            return await self._refuse(INVALID, appid, game_name)
         return await self._change(lambda data: data["global"].update(allow_fp16=allowed),
                                   f"allow_fp16 = {allowed}", appid, game_name)
 
@@ -221,8 +229,7 @@ class Plugin:
     async def remove_profile(self, ids: list, appid: int = 0, game_name: str = "") -> dict:
         """Keep lsfg-vk out of the game matching ids (the list's switch turned off)."""
         if not _valid_ids(ids):
-            self.error = INVALID
-            return await self._reply(appid, game_name)
+            return await self._refuse(INVALID, appid, game_name)
         return await self._change(lambda data: lsfg_config.remove_ids(data, ids), f"profile {ids}: removed",
                                   appid, game_name)
 
@@ -232,8 +239,8 @@ class Plugin:
             home = _home()
             cli = lsfg_install.find_cli(home)
             if cli and not self.manifest.files:
-                self.error = "lsfg-vk is already installed by something else; DeckyLS uses that installation."
-                return await self._reply(appid, name)
+                return await self._refuse("lsfg-vk is already installed by something else; DeckyLS uses that "
+                                          "installation.", appid, name)
             self.busy, self.error = "Downloading lsfg-vk…", ""
             try:
                 archive = await asyncio.to_thread(lsfg_install.download)
@@ -249,7 +256,7 @@ class Plugin:
                 await asyncio.to_thread(self.manifest.save, lsfg_install.LSFG_VERSION, written + list(stale))
                 decky.logger.info(f"installed lsfg-vk {lsfg_install.LSFG_VERSION} ({len(written)} files)")
             except (lsfg_install.InstallError, OSError) as e:
-                self.error = str(e)
+                self.error = f"Could not install lsfg-vk: {_reason(e)}" if isinstance(e, OSError) else str(e)
                 decky.logger.error(f"installing lsfg-vk failed: {e}")
             finally:
                 self.busy = ""
@@ -266,15 +273,16 @@ class Plugin:
                 if failed:  # still recorded, so pressing the button again finishes the job
                     await asyncio.to_thread(self.manifest.save, self.manifest.version, list(failed))
                     path, reason = next(iter(failed.items()))
-                    self.error = f"Could not remove {len(failed)} lsfg-vk file(s), such as {path}: {reason}"
-                    decky.logger.error(self.error)
+                    self.error = (f"Could not remove {len(failed)} lsfg-vk file(s), such as "
+                                  f"{os.path.basename(path)}: {reason}")
+                    decky.logger.error(f"could not remove {len(failed)} lsfg-vk file(s): {failed}")
                 else:
                     await asyncio.to_thread(self.manifest.clear)
                     self.error = ""
                     decky.logger.info(f"removed lsfg-vk ({len(files)} files)")
             except OSError as e:
-                self.error = f"Could not remove lsfg-vk: {e}"
-                decky.logger.error(self.error)
+                self.error = f"Could not remove lsfg-vk: {_reason(e)}"
+                decky.logger.error(f"removing lsfg-vk failed: {e}")
             finally:
                 self.health = (None, None)
         return await self._reply(appid, name)
