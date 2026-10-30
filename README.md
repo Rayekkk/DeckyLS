@@ -70,7 +70,7 @@ your Downloads folder, checked against GitHub's size and SHA-256; install it the
 game settings stay as they are. When a release comes with a newer lsfg-vk, the **lsfg-vk** section offers
 **Update lsfg-vk to …**.
 
-<a href="docs/screenshots/about.png"><img src="docs/screenshots/about.png" alt="About: lsfg-vk health check and Remove lsfg-vk" width="360"></a>
+<a href="docs/screenshots/about.png"><img src="docs/screenshots/about.png" alt="About: credits, Rayek's store and Check for updates" width="360"></a>
 
 ### Uninstalling
 
@@ -229,7 +229,7 @@ The AI was used to:
 
 - compare the existing Lossless Scaling plugins, find what lsfg-vk 2.0 makes possible and verify
   on the device how it picks profiles, reloads its config and logs;
-- build the automated test suites (about 145 backend tests, run on Linux and Windows, and a test
+- build the automated test suites (about 185 backend tests, run on Linux and Windows, and a test
   of the panel);
 - audit the code for bugs, security issues and wasted work, with every finding checked by
   independent review passes and, where possible, reproduced before it was fixed;
