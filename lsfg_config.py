@@ -19,7 +19,7 @@ import dk_fs
 VERSION = 2
 SHOWN = "~/.config/lsfg-vk/conf.toml"  # how errors name the file: never its full path, which has the user's name
 BACKUP_SUFFIX = ".bak-deckyls"
-# lsfg-vk rejects a file without profiles; this one stands in for the last removed game and matches nothing.
+# lsfg-vk rejects a file without profiles; this one stands in when no game has one and matches nothing.
 PLACEHOLDER = {"name": "DeckyLS: no game", "active_in": "deckyls-no-game", "multiplier": 1}
 _BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 
@@ -82,7 +82,7 @@ def remove_ids(data, ids):
         elif rest:
             profile["active_in"] = rest[0] if len(rest) == 1 else rest
             kept.append(profile)
-    data["profile"] = kept or [dict(PLACEHOLDER)]
+    data["profile"] = kept
 
 
 def set_profile(data, name, ids, settings):
@@ -136,6 +136,7 @@ def dumps(data):
 
 
 def save(path, data):
+    data["profile"] = data["profile"] or [dict(PLACEHOLDER)]  # e.g. the last game turned off, or FP16 set first
     text = dumps(data).encode("utf-8")  # fails here, before any file is touched, on text UTF-8 cannot hold
     os.makedirs(os.path.dirname(path), exist_ok=True)
     backup = path + BACKUP_SUFFIX

@@ -204,6 +204,11 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.saved()["global"], {"allow_fp16": False})
         self.assertEqual(self.saved()["profile"][0]["name"], "x")
 
+    def test_fp16_before_any_game_still_writes_a_file_lsfg_vk_accepts(self):
+        asyncio.run(self.plugin.set_fp16(False))
+        self.assertEqual(self.saved(), {"version": 2, "global": {"allow_fp16": False},
+                                        "profile": [lsfg_config.PLACEHOLDER]})
+
     def test_list_switch_prepares_and_removes_a_game_without_touching_the_running_one(self):
         self.call(["1145360"], "Hades", settings(multiplier=1), appid=1809540, game_name="Nine Sols")
         result = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))
