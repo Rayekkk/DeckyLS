@@ -8,6 +8,8 @@ All notable changes to DeckyLS, newest first.
 
 - **About:** a new page (last row of the panel) shows the version, author, license and credits for lsfg-vk and
   Lossless Scaling.
+- **About:** **Use Rayek's store** makes Rayek's store Decky's store channel after you confirm, so Decky's Store
+  tab lists Rayek's plugins and offers their updates.
 - **Updates:** **Check for updates** at the bottom of About downloads a newer DeckyLS release to your Downloads
   folder (checked against GitHub's size and SHA-256), to install from Decky settings → Developer → Install plugin
   from ZIP.

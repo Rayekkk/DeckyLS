@@ -58,6 +58,11 @@ Tested on a Legion Go 2 (SteamOS, Decky Loader 3.3) with Nine Sols under Proton 
 4. Choose **Install Plugin from ZIP**, select the archive, then open **DeckyLS** in Decky.
 5. Press **Install lsfg-vk 2.0.0**.
 
+**Rayek's store:** **About → Use Rayek's store** sets Decky's store channel to Rayek's store
+(`https://decky.rayek.workers.dev`) after you confirm, so Decky's **Store** tab lists Rayek's plugins and offers
+their updates. Plugins from the official store stay installed, but get no update offers while it is selected;
+switch back in **Decky Settings → General → Store channel → Default**.
+
 ### Updating
 
 **About → Check for updates** (the last row of the panel) finds a newer DeckyLS release and downloads its ZIP to
