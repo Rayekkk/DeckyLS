@@ -209,6 +209,19 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.saved(), {"version": 2, "global": {"allow_fp16": False},
                                         "profile": [lsfg_config.PLACEHOLDER]})
 
+    def test_an_old_config_is_refused_until_reset_then_changes_work(self):
+        os.makedirs(os.path.dirname(self.plugin.config_path), exist_ok=True)
+        with open(self.plugin.config_path, "w", encoding="utf-8") as f:
+            f.write("version = 1\n")
+        state = asyncio.run(self.plugin.get_state())["state"]
+        self.assertIn("Reset config file", state["config_error"])
+        result = asyncio.run(self.plugin.reset_config())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["state"]["config_error"], "")
+        self.assertTrue(self.call(["1"], "x", settings())["ok"])
+        self.assertEqual(self.saved()["profile"][0]["name"], "x")
+        self.assertTrue(os.path.exists(self.plugin.config_path + lsfg_config.BACKUP_SUFFIX))
+
     def test_list_switch_prepares_and_removes_a_game_without_touching_the_running_one(self):
         self.call(["1145360"], "Hades", settings(multiplier=1), appid=1809540, game_name="Nine Sols")
         result = asyncio.run(self.plugin.remove_profile(["1145360"], 1809540, "Nine Sols"))

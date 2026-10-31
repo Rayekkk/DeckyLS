@@ -52,6 +52,7 @@ const removeProfile = callable<[string[], ...GameArgs], Result<State>>("remove_p
 const setFp16 = callable<[boolean, ...GameArgs], Result<State>>("set_fp16");
 const installLsfg = callable<GameArgs, Result<State>>("install_lsfg");
 const removeLsfg = callable<GameArgs, Result<State>>("remove_lsfg");
+const resetConfig = callable<GameArgs, Result<State>>("reset_config");
 const checkUpdates = callable<[], UpdateCheck>("check_for_updates");
 const performUpdate = callable<[string], UpdateDownload>("perform_update");
 
@@ -247,7 +248,19 @@ const Content: FC<{ updates?: UpdateController }> = ({ updates }) => {
             </>
           )}
           {state.rivals.length > 0 && <Note tone="warning">Also installed: {state.rivals.join(", ")}. Use only one plugin to manage lsfg-vk.</Note>}
-          {state.config_error && <Note tone="error">{state.config_error}</Note>}
+          {state.config_error && (
+            <>
+              <Note tone="error">{state.config_error}</Note>
+              <PanelSectionRow>
+                <ActionButton disabled={!!state.busy} onClick={() => confirmAction("Reset the config file?",
+                  "DeckyLS replaces ~/.config/lsfg-vk/conf.toml with a new lsfg-vk 2 file and keeps the old one next to it as conf.toml.bak-deckyls. Frame generation is then set up again per game in this menu.",
+                  "Reset", () => run(resetConfig, "Started a new config file. The old one is kept next to it."),
+                  { destructive: true })}>
+                  Reset config file
+                </ActionButton>
+              </PanelSectionRow>
+            </>
+          )}
           {state.error && <Note tone="error">{state.error}</Note>}
         </PanelSection>
       )}

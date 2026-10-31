@@ -238,6 +238,21 @@ class Plugin:
                                   appid, game_name)
 
     @rpc
+    async def reset_config(self, appid: int = 0, name: str = "") -> dict:
+        """Replace a conf.toml DeckyLS cannot use (lsfg-vk 1, broken) with a new one; the old file is kept."""
+        async with self.lock:
+            try:
+                backup = await asyncio.to_thread(lsfg_config.reset, self.config_path)
+                self.error = ""
+                if backup:
+                    decky.logger.info(f"started a new lsfg-vk config; the old file is {backup}")
+            except (lsfg_config.ConfigError, OSError) as e:
+                self.error = f"Could not reset lsfg-vk's config file: {dk_fs.shown(e)}" if isinstance(e, OSError) \
+                    else str(e)
+                decky.logger.error(f"resetting the lsfg-vk config failed: {e}")
+        return await self._reply(appid, name)
+
+    @rpc
     async def install_lsfg(self, appid: int = 0, name: str = "") -> dict:
         async with self.lock:
             home = _home()

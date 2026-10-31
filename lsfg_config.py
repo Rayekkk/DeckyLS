@@ -19,6 +19,7 @@ import dk_fs
 VERSION = 2
 SHOWN = "~/.config/lsfg-vk/conf.toml"  # how errors name the file: never its full path, which has the user's name
 BACKUP_SUFFIX = ".bak-deckyls"
+RESET_HINT = "Press Reset config file to start a new one; the old file is kept next to it."
 # lsfg-vk rejects a file without profiles; this one stands in when no game has one and matches nothing.
 PLACEHOLDER = {"name": "DeckyLS: no game", "active_in": "deckyls-no-game", "multiplier": 1}
 _BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
@@ -41,16 +42,35 @@ def load(path):
         return {"version": VERSION, "global": {}, "profile": []}
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
         reason = dk_fs.shown(e)
-        raise ConfigError(f"{SHOWN} cannot be read ({reason}). Fix or delete it; DeckyLS will not overwrite it.") from e
+        raise ConfigError(f"{SHOWN} cannot be read ({reason}). {RESET_HINT}") from e
     if data.get("version") != VERSION:
-        raise ConfigError(f"{SHOWN} is not an lsfg-vk 2 configuration (version = {data.get('version')!r}). "
-                          "Delete it or update it for lsfg-vk 2; DeckyLS will not overwrite it.")
+        raise ConfigError(f"{SHOWN} is not an lsfg-vk 2 configuration (version = {data.get('version')!r}), "
+                          f"for example one left by an older plugin. {RESET_HINT}")
     data.setdefault("global", {})
     data.setdefault("profile", [])
     if not isinstance(data["global"], dict) or not isinstance(data["profile"], list) \
             or not all(isinstance(p, dict) for p in data["profile"]):
-        raise ConfigError(f"{SHOWN} has an unexpected layout; DeckyLS will not overwrite it.")
+        raise ConfigError(f"{SHOWN} has an unexpected layout. {RESET_HINT}")
     return data
+
+
+def reset(path):
+    """Replace a file load() refuses with an empty lsfg-vk 2 one; the old file is copied next to it first.
+    Returns the copy's name, or None when the file is already usable (nothing is touched then)."""
+    try:
+        load(path)
+        return None
+    except ConfigError:
+        pass
+    backup = path + BACKUP_SUFFIX
+    n = 1
+    while os.path.lexists(backup):  # never replace an earlier copy: it may be the user's own file
+        n += 1
+        backup = f"{path}{BACKUP_SUFFIX}.{n}"
+    with open(path, "rb") as f:
+        dk_fs.write_atomic(backup, f)
+    save(path, {"version": VERSION, "global": {}, "profile": []})
+    return os.path.basename(backup)
 
 
 def profile_ids(profile):

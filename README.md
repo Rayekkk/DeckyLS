@@ -116,7 +116,7 @@ follows fast motion better. **Performance mode** uses a lighter model that suits
 | Status still says restart after a restart | The game does not render through Vulkan (for example a native OpenGL game). If it has a Windows version, try it with Proton |
 | "Also installed: …" | Another plugin manages lsfg-vk too (Decky LSFG-VK, MAKO). Keep only one; uninstall the other |
 | "lsfg-vk is already installed by something else" | DeckyLS uses that installation. Remove it with the tool that installed it if you want DeckyLS to manage lsfg-vk |
-| "…conf.toml cannot be read…" | Fix or delete `~/.config/lsfg-vk/conf.toml`; DeckyLS never overwrites a file it cannot read. Your earlier file is in `conf.toml.bak-deckyls` |
+| "…conf.toml cannot be read…" or "…is not an lsfg-vk 2 configuration…" | Press **Reset config file** under the message. DeckyLS starts a new file and keeps the old one next to it as `conf.toml.bak-deckyls`. Coming from Decky LSFG-VK, also remove `~/lsfg %command%` from your games' launch options |
 | The **lsfg-vk** section shows a health-check report instead of **Healthy** | Follow what it says; it comes from lsfg-vk's own `lsfg-vk-cli healthcheck` |
 | Ghosting or wobbly edges | Raise **Flow scale**, turn off **Performance mode**, or raise the base frame rate |
 | The game crashes or freezes with frame generation | Open **Compatibility options**, turn on **Keep the game's buffer count** and restart the game |

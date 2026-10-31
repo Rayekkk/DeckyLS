@@ -349,6 +349,29 @@ test('frontend panel', async () => {
     assert.ok(find(h.render(), 'Field', 'Not installed'));
   }
 
+  // A config file DeckyLS cannot use (an older plugin's lsfg-vk 1 file) has its fix right under the message.
+  {
+    const modals = [];
+    const h = panel(undefined, { ui: { showModal: m => modals.push(m) } });
+    h.render();
+    await settle();
+    const broken = '~/.config/lsfg-vk/conf.toml is not an lsfg-vk 2 configuration (version = 1).';
+    h.respond('get_state', { ...base, config_error: broken });
+    await settle();
+    const reset = () => all(h.render()).find(n => n.type === 'ButtonItem' && n.props.children === 'Reset config file');
+    assert.ok(findText(h.render(), broken));
+    reset().props.onClick();
+    assert.deepEqual([modals[0].props.strTitle, modals[0].props.strOKButtonText, modals[0].props.bDestructiveWarning],
+      ['Reset the config file?', 'Reset', true]);
+    assert.ok(!h.calls.some(c => c.name === 'reset_config'), 'nothing replaced before the answer');
+    modals[0].props.onOK();
+    await settle();
+    h.respond('reset_config', base);
+    await settle();
+    assert.deepEqual(h.toasts.map(t => t.body), ['Started a new config file. The old one is kept next to it.']);
+    assert.equal(reset(), undefined, 'the button goes with the problem');
+  }
+
   // About is the last row and opens a page: version, author, credits, and the plugin's updater at the very bottom.
   // B (or ‹ DeckyLS) goes back, and the D-pad returns to the About row.
   {

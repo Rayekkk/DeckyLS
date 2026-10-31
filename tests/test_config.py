@@ -86,6 +86,19 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(c.ConfigError):
                 c.load(self.path)
 
+    def test_reset_replaces_only_a_refused_file_and_keeps_every_old_one(self):
+        self.write(USER_FILE)
+        self.assertIsNone(c.reset(self.path), "a usable file is left alone")
+        with open(self.path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), USER_FILE)
+        old = 'version = 1\n\n[[game]]\nexe = "decky-lsfg-vk"\n'
+        for expected in ("conf.toml.bak-deckyls", "conf.toml.bak-deckyls.2"):
+            self.write(old)
+            self.assertEqual(c.reset(self.path), expected)
+            self.assertEqual(c.load(self.path), {"version": 2, "global": {}, "profile": [c.PLACEHOLDER]})
+            with open(os.path.join(os.path.dirname(self.path), expected), encoding="utf-8") as f:
+                self.assertEqual(f.read(), old)
+
     def test_a_file_that_cannot_be_opened_is_named_without_its_full_path(self):
         os.makedirs(self.path)  # a folder where the file should be: opening it fails with an OSError
         with self.assertRaises(c.ConfigError) as caught:
